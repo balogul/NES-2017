@@ -593,10 +593,10 @@ static void multi_role_init(void)
   
   // Setup the GAP Bond Manager
   {
-    uint8_t pairMode = GAPBOND_PAIRING_MODE_INITIATE;
-    uint8_t mitm = TRUE;
+    uint8_t pairMode = GAPBOND_PAIRING_MODE_NO_PAIRING;
+    uint8_t mitm = FALSE;
     uint8_t ioCap = GAPBOND_IO_CAP_DISPLAY_ONLY;
-    uint8_t bonding = TRUE;
+    uint8_t bonding = FALSE;
     
     // set pairing mode
     GAPBondMgr_SetParameter(GAPBOND_PAIRING_MODE, sizeof(uint8_t), &pairMode);
