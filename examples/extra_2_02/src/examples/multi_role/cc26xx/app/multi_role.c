@@ -83,9 +83,9 @@
 #define CALCULATION_DONE_ADV_INT              1600
 
 // Advertising channels for different modes
-#define DEFAULT_IDLE_ADV_CHAN         GAP_ADVCHAN_37
+#define DEFAULT_IDLE_ADV_CHAN         GAP_ADVCHAN_ALL
 #define MASTER_BROADCAST_ADV_CHAN     GAP_ADVCHAN_39
-#define CALC_DONE_ADV_CHAN            GAP_ADVCHAN_ALL
+//#define CALC_DONE_ADV_CHAN            GAP_ADVCHAN_ALL
 
 // Limited discoverable mode advertises for 30.72s, and then stops
 // General discoverable mode advertises indefinitely
@@ -110,8 +110,8 @@
 #define DEFAULT_SVC_DISCOVERY_DELAY           1000
 
 // Scan parameters
-#define DEFAULT_BROADCAST_SCAN_DURATION       25000
-#define MASTER_BROADCASTER_CHECK_SCAN_DUR     4000
+#define DEFAULT_BROADCAST_SCAN_DURATION       30000
+//#define MASTER_BROADCASTER_CHECK_SCAN_DUR     4000
 #define DEFAULT_SCAN_WIND                     80
 #define DEFAULT_SCAN_INT                      80
 
@@ -126,6 +126,7 @@
 
 // TRUE to use active scan
 #define DEFAULT_DISCOVERY_ACTIVE_SCAN         TRUE
+#define BROADCAST_DISCOVERY_PASSIVE_SCAN      FALSE
 
 // TRUE to use white list during discovery
 #define DEFAULT_DISCOVERY_WHITE_LIST          FALSE
@@ -171,6 +172,7 @@
 
 #define APP_NUMBER_OF_NODES           20u
 #define APP_NUMBER_OF_EXPERIMENTS     5u
+#define APP_NUMBER_OF_MEASUREMENTS    100u /*TODO: Make it 1000 for actual tests. */
 
 // Application states
 typedef enum {
@@ -244,9 +246,9 @@ typedef struct
 typedef struct
 {
   network_dev_t*  p_devs;
-  uint8_t         rssi_vals[APP_NUMBER_OF_NODES][APP_NUMBER_OF_EXPERIMENTS];
   size_t          dev_index;
   size_t          exp_index;
+  uint8_t         rssi_vals[APP_NUMBER_OF_NODES][APP_NUMBER_OF_EXPERIMENTS];
 } __attribute__((__packed__)) calc_rssi_t;
 
 // App event passed from profiles.
@@ -302,9 +304,11 @@ static Queue_Handle appMsgQueue;
 Task_Struct mrTask;
 Char mrTaskStack[MR_TASK_STACK_SIZE];
 
+static uint8_t g_my_mac[B_ADDR_LEN];
+
 static node_info_t g_base_node =
 {
- {0xA0, 0xE6, 0xF8, 0xC1, 0xD1, 0x84},
+ {0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
  FALSE
 };
 
@@ -312,8 +316,12 @@ static network_dev_t g_my_devices =
 {
  {
   {
-    {0xA0, 0xE6, 0xF8, 0xB6, 0x4B, 0x04},
-    FALSE
+   {0x04, 0x4B, 0xB6, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  {
+   {0x84, 0xD1, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
   },
  },
  0u
@@ -322,6 +330,8 @@ static network_dev_t g_my_devices =
 static calc_rssi_t g_exp_values =
 {
  &g_my_devices,
+ 0u,
+ 0u,
 };
 
 static uint8_t scanRspData[] =
@@ -662,7 +672,11 @@ static void multi_role_init(void)
     //set the max amount of scan responses
     GAPRole_SetParameter(GAPROLE_MAX_SCAN_RES, sizeof(uint8_t), 
                          &scanRes, NULL);
-    
+
+    /* Initialise indexes. */
+    g_exp_values.dev_index = 0u;
+    g_exp_values.exp_index = 0u;
+
     // Start the GAPRole and negotiate max number of connections
     VOID GAPRole_StartDevice(&multi_role_gapRoleCBs, &maxNumBleConns);
     
@@ -773,6 +787,9 @@ static void multi_role_init(void)
 */
 static void multi_role_taskFxn(UArg a0, UArg a1)
 {
+  static uint8_t s_adv_enable = TRUE;
+  static uint16_t s_advint = DEFAULT_ADVERTISING_INTERVAL;
+
   // Initialize application
   multi_role_init();
   
@@ -842,13 +859,85 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
 
       if(g_events & APP_BEGIN_LISTENNING_EVENT)
       {
-        g_events &= ~ APP_BEGIN_LISTENNING_EVENT;
+        g_events &= ~APP_BEGIN_LISTENNING_EVENT;
 
+        s_adv_enable = FALSE;
+
+        /* Stop advertising. */
+        GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t),
+                             &s_adv_enable, NULL);
+
+        GAPRole_StartDiscovery(DEFAULT_DISCOVERY_MODE,
+                               BROADCAST_DISCOVERY_PASSIVE_SCAN,
+                               DEFAULT_DISCOVERY_WHITE_LIST);
       }
       else if(g_events & APP_BEGIN_BROADCASTING_EVENT)
       {
-        g_events &= ~ APP_BEGIN_BROADCASTING_EVENT;
+        g_events &= ~APP_BEGIN_BROADCASTING_EVENT;
 
+        s_advint = MASTER_BROADCAST_ADV_INT;
+        s_adv_enable = FALSE;
+        g_adv_channel = MASTER_BROADCAST_ADV_CHAN;
+
+        /* Stop advertising. */
+        GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t),
+                             &s_adv_enable, NULL);
+
+        /* Update the channel. */
+        GAPRole_SetParameter(GAPROLE_ADV_CHANNEL_MAP, sizeof(uint8_t),
+                             &g_adv_channel, NULL);
+
+        /* Update advertising data. */
+        GAPRole_SetParameter(GAPROLE_ADVERT_DATA, sizeof(broadcastData),
+                             broadcastData, NULL);
+
+        /* Update interval. */
+        GAP_SetParamValue(TGAP_LIM_DISC_ADV_INT_MIN, s_advint);
+        GAP_SetParamValue(TGAP_LIM_DISC_ADV_INT_MAX, s_advint);
+        GAP_SetParamValue(TGAP_GEN_DISC_ADV_INT_MIN, s_advint);
+        GAP_SetParamValue(TGAP_GEN_DISC_ADV_INT_MAX, s_advint);
+        GAP_SetParamValue(TGAP_CONN_ADV_INT_MIN, s_advint);
+        GAP_SetParamValue(TGAP_CONN_ADV_INT_MAX, s_advint);
+
+        s_adv_enable = TRUE;
+
+        /* Start broadcasting. */
+        GAPRole_SetParameter(GAPROLE_ADV_NONCONN_ENABLED, sizeof(uint8_t),
+                             &s_adv_enable, NULL);
+      }
+      if(g_events & APP_BEGIN_IDLE_ADVERTISING_EVENT)
+      {
+        g_events &= ~APP_BEGIN_IDLE_ADVERTISING_EVENT;
+
+        s_advint = CALCULATION_DONE_ADV_INT;
+        s_adv_enable = FALSE;
+        g_adv_channel = DEFAULT_IDLE_ADV_CHAN;
+
+        /* Stop advertising. */
+        GAPRole_SetParameter(GAPROLE_ADV_NONCONN_ENABLED, sizeof(uint8_t),
+                             &s_adv_enable, NULL);
+
+        /* Update the channel. */
+        GAPRole_SetParameter(GAPROLE_ADV_CHANNEL_MAP, sizeof(uint8_t),
+                             &g_adv_channel, NULL);
+
+        /* Update advertising data. */
+        GAPRole_SetParameter(GAPROLE_ADVERT_DATA, sizeof(rssiadvertData),
+                             rssiadvertData, NULL);
+
+        /* Update interval. */
+        GAP_SetParamValue(TGAP_LIM_DISC_ADV_INT_MIN, s_advint);
+        GAP_SetParamValue(TGAP_LIM_DISC_ADV_INT_MAX, s_advint);
+        GAP_SetParamValue(TGAP_GEN_DISC_ADV_INT_MIN, s_advint);
+        GAP_SetParamValue(TGAP_GEN_DISC_ADV_INT_MAX, s_advint);
+        GAP_SetParamValue(TGAP_CONN_ADV_INT_MIN, s_advint);
+        GAP_SetParamValue(TGAP_CONN_ADV_INT_MAX, s_advint);
+
+        s_adv_enable = TRUE;
+
+        /* Start broadcasting. */
+        GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t),
+                             &s_adv_enable, NULL);
       }
     }
   }
@@ -1148,6 +1237,12 @@ static uint8_t multi_role_eventCB(gapMultiRoleEvent_t *pEvent)
 */
 static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
 {
+  static uint16_t s_dev_counter = 0u;
+  static uint16_t s_err_counter = 0u;
+  int8 rssi_val = 0u;
+  size_t index;
+  bool done = FALSE;
+
   switch (pEvent->gap.opcode)
   {
     // GAPRole started
@@ -1161,7 +1256,19 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
       //Display_print0(dispHandle, 0, 0, "Initialized");
       
       //set device info characteristic
-      DevInfo_SetParameter(DEVINFO_SYSTEM_ID, DEVINFO_SYSTEM_ID_LEN, pEvent->initDone.devAddr);    
+      DevInfo_SetParameter(DEVINFO_SYSTEM_ID, DEVINFO_SYSTEM_ID_LEN, pEvent->initDone.devAddr);
+
+      /* Initialise device index. */
+      GAPRole_GetParameter(GAPROLE_BD_ADDR, g_my_mac, NULL);
+
+      for(index = 0u ; ((index < APP_NUMBER_OF_NODES) && (FALSE == done)) ; index++)
+      {
+        if(0u == memcmp(g_my_devices.nodes[index].node_mac, g_my_mac, B_ADDR_LEN))
+        {
+          g_my_devices.my_index = index;
+          done = TRUE;
+        }
+      }
     }
     break;
     
@@ -1190,6 +1297,31 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
     // a discovered device report
   case GAP_DEVICE_INFO_EVENT:
     {
+
+      if(0u == memcmp(pEvent->deviceInfo.addr ,
+                      g_my_devices.nodes[g_exp_values.dev_index].node_mac ,
+                      B_ADDR_LEN))
+      {
+        rssi_val = g_exp_values.rssi_vals[g_exp_values.dev_index][g_exp_values.exp_index];
+        if(0u == s_dev_counter)
+        {
+          g_exp_values.rssi_vals[g_exp_values.dev_index][g_exp_values.exp_index] = \
+              pEvent->deviceInfo.rssi;
+        }else{
+          g_exp_values.rssi_vals[g_exp_values.dev_index][g_exp_values.exp_index] = \
+              ((rssi_val/2) + (pEvent->deviceInfo.rssi/2));
+        }
+        s_dev_counter++;
+      }else{
+        s_err_counter++;
+      }
+
+      if(APP_NUMBER_OF_MEASUREMENTS == s_dev_counter)
+      {
+        s_dev_counter = 0u;
+      }
+
+#if 0
       // if filtering device discovery results based on service UUID
       if (DEFAULT_DEV_DISC_BY_SVC_UUID == TRUE)
       {
@@ -1203,12 +1335,26 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
                                    pEvent->deviceInfo.addrType);
         }
       }
+#endif
     }
     break;
     
     // end of discovery report
   case GAP_DEVICE_DISCOVERY_EVENT:
     {
+      if((0u != s_err_counter) || (APP_NUMBER_OF_MEASUREMENTS != s_dev_counter))
+      {
+        rssiadvertData[(5 + g_exp_values.dev_index)] = \
+            g_exp_values.rssi_vals[g_exp_values.dev_index][g_exp_values.exp_index];
+      }else{
+        rssiadvertData[(5 + g_exp_values.dev_index)] = 0u ;
+      }
+
+      g_events |= APP_BEGIN_IDLE_ADVERTISING_EVENT;
+
+      // Wake up the application.
+      Semaphore_post(sem);
+#if 0
       // discovery complete
       //scanningStarted = FALSE;
       
@@ -1225,6 +1371,7 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
       
       // initialize scan index to last device
       //scanIdx = scanRes;
+#endif
     }
     break;
     
@@ -1246,7 +1393,7 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
         //if (linkDB_NumActive() >= maxNumBleConns)
         /* Turn off advertising if the initiator is base node.
          * TODO: Test MSB LSB bytes for mac address. */
-        if(0u == memcmp(pEvent->linkCmpl.devAddr, g_base_node.node_mac, B_ADDR_LEN))
+        //if(0u == memcmp(pEvent->linkCmpl.devAddr, g_base_node.node_mac, B_ADDR_LEN))
         {
           uint8_t advertEnabled = FALSE;
           GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &advertEnabled, NULL);
@@ -1254,16 +1401,16 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
 
           // Store the event.
           if(g_my_devices.my_index == g_exp_values.dev_index){
-            g_events |= APP_STATE_MASTER_BROADCASTER;
+            g_events |= APP_BEGIN_BROADCASTING_EVENT;
           }else{
-            g_events |= APP_STATE_LISTEN_BROADCASTS;
+            g_events |= APP_BEGIN_LISTENNING_EVENT;
           }
 
           // Wake up the application.
           Semaphore_post(sem);
-        }else{
+        }//else{
           GAPRole_TerminateConnection(pEvent->linkCmpl.connectionHandle);
-        }
+        //}
         
         // Print last connected device
         //Display_print0(dispHandle, 0, 0, "");
