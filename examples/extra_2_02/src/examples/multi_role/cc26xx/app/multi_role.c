@@ -79,12 +79,12 @@
 */
 // Advertising interval when device is discoverable (units of 625us, 800=500ms)
 #define DEFAULT_ADVERTISING_INTERVAL          800
-#define MASTER_BROADCAST_ADV_INT              32
+#define MASTER_BROADCAST_ADV_INT              160
 #define CALCULATION_DONE_ADV_INT              1600
 
 // Advertising channels for different modes
-#define DEFAULT_IDLE_ADV_CHAN         GAP_ADVCHAN_ALL
-#define MASTER_BROADCAST_ADV_CHAN     GAP_ADVCHAN_39
+#define DEFAULT_ADV_CHAN                GAP_ADVCHAN_ALL
+//#define MASTER_BROADCAST_ADV_CHAN     GAP_ADVCHAN_39
 //#define CALC_DONE_ADV_CHAN            GAP_ADVCHAN_ALL
 
 // Limited discoverable mode advertises for 30.72s, and then stops
@@ -110,13 +110,13 @@
 #define DEFAULT_SVC_DISCOVERY_DELAY           1000
 
 // Scan parameters
-#define DEFAULT_BROADCAST_SCAN_DURATION       30000
+#define DEFAULT_BROADCAST_SCAN_DURATION       150
 //#define MASTER_BROADCASTER_CHECK_SCAN_DUR     4000
 #define DEFAULT_SCAN_WIND                     80
 #define DEFAULT_SCAN_INT                      80
 
 // Maximum number of scan responses
-#define DEFAULT_MAX_SCAN_RES                  8
+#define DEFAULT_MAX_SCAN_RES                  20
 
 // TRUE to filter discovery results on desired service UUID
 #define DEFAULT_DEV_DISC_BY_SVC_UUID          TRUE
@@ -153,7 +153,7 @@
 // Task configuration
 #define MR_TASK_PRIORITY                     1
 #ifndef MR_TASK_STACK_SIZE
-#define MR_TASK_STACK_SIZE                   944
+#define MR_TASK_STACK_SIZE                   946
 #endif
 
 // Internal Events for RTOS application
@@ -163,7 +163,7 @@
 #define MR_KEY_CHANGE_EVT                    0x0008
 #define MR_PAIRING_STATE_EVT                 0x0010
 #define MR_PASSCODE_NEEDED_EVT               0x0020
-//#define MR_SCAN_REQ_EVT                      0x0040
+#define MR_ADV_DONE_EVT                      0x0040
 //Application specific events
 #define APP_BEGIN_LISTENNING_EVENT          0x8000
 #define APP_BEGIN_BROADCASTING_EVENT        0x4000
@@ -212,7 +212,16 @@ typedef enum {
 
 static appState_t g_app_state = APP_STATE_IDLE;
 
-static uint8_t g_adv_channel = DEFAULT_IDLE_ADV_CHAN;
+static bool g_is_experiment = FALSE;
+
+//static uint8_t g_adv_channel = DEFAULT_IDLE_ADV_CHAN;
+
+static Clock_Struct g_task_delay_clock;
+static Clock_Struct g_end_discovery_clock;
+static Clock_Struct g_bug_clock;
+
+static uint16_t g_pack_counter = 0u;
+static uint16_t g_err_counter = 0u;
 
 #if !(defined(CC2650STK))
 // Key option state.
@@ -452,7 +461,7 @@ static uint8_t scanRes;
 //static uint8_t connectingState = 0;
 
 // Scan result list
-static gapDevRec_t devList[DEFAULT_MAX_SCAN_RES];
+//static gapDevRec_t devList[DEFAULT_MAX_SCAN_RES];
 
 #if 0
 // Value to write
@@ -559,6 +568,18 @@ void multi_role_createTask(void)
   Task_construct(&mrTask, multi_role_taskFxn, &taskParams, NULL);
 }
 
+void end_discovery(xdc_UArg arg)
+{
+  g_is_experiment = FALSE;
+}
+
+void my_task_clock_handler(xdc_UArg arg)
+{
+  g_events |= arg;
+
+  Semaphore_post(sem);
+}
+
 /*********************************************************************
 * @fn      multi_role_init
 *
@@ -588,6 +609,14 @@ static void multi_role_init(void)
   // Open Display.
   //dispHandle = Display_open(SBC_DISPLAY_TYPE, NULL);
   
+  Util_constructClock(&g_task_delay_clock, my_task_clock_handler, 1000u,
+                      0u, FALSE, APP_BEGIN_IDLE_ADVERTISING_EVENT);
+
+  Util_constructClock(&g_end_discovery_clock, end_discovery, 1000u,\
+                      0u, FALSE, APP_BEGIN_CALCULATING_RSSI_EVENT);
+
+  Util_constructClock(&g_bug_clock, my_task_clock_handler, 10000u, \
+                      0u, FALSE, APP_BEGIN_BROADCASTING_EVENT);
   // Setup the GAP
   {
     /*-------------------PERIPHERAL-------------------*/
@@ -633,10 +662,10 @@ static void multi_role_init(void)
     uint16_t desiredMaxInterval = DEFAULT_DESIRED_MAX_CONN_INTERVAL;
     uint16_t desiredSlaveLatency = DEFAULT_DESIRED_SLAVE_LATENCY;
     uint16_t desiredConnTimeout = DEFAULT_DESIRED_CONN_TIMEOUT;
-    g_adv_channel = DEFAULT_IDLE_ADV_CHAN;
+    //g_adv_channel = DEFAULT_IDLE_ADV_CHAN;
 
     // device starts advertising on one channel
-    GAPRole_SetParameter(GAPROLE_ADV_CHANNEL_MAP, sizeof(uint8_t),
+    //GAPRole_SetParameter(GAPROLE_ADV_CHANNEL_MAP, sizeof(uint8_t),\
                          &g_adv_channel, NULL);
     
     // device starts advertising upon initialization
@@ -724,7 +753,7 @@ static void multi_role_init(void)
       uint8_t charValue2 = 2;
       uint8_t charValue3 = 3;
       uint8_t charValue4 = 4;
-      uint8_t charValue5[SIMPLEPROFILE_CHAR5_LEN] = { 1, 2, 3, 4, 5 };
+      //uint8_t charValue5[SIMPLEPROFILE_CHAR5_LEN] = { 1, 2, 3, 4, 5 };
       
       SimpleProfile_SetParameter(SIMPLEPROFILE_CHAR1, sizeof(uint8_t),
                                  &charValue1);
@@ -734,7 +763,7 @@ static void multi_role_init(void)
                                  &charValue3);
       SimpleProfile_SetParameter(SIMPLEPROFILE_CHAR4, sizeof(uint8_t),
                                  &charValue4);
-      SimpleProfile_SetParameter(SIMPLEPROFILE_CHAR5, SIMPLEPROFILE_CHAR5_LEN,
+      //SimpleProfile_SetParameter(SIMPLEPROFILE_CHAR5, SIMPLEPROFILE_CHAR5_LEN,\
                                  charValue5);
     }
     
@@ -789,6 +818,7 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
 {
   static uint8_t s_adv_enable = TRUE;
   static uint16_t s_advint = DEFAULT_ADVERTISING_INTERVAL;
+  static uint16_t s_adv_counter = 0u;
 
   // Initialize application
   multi_role_init();
@@ -825,9 +855,23 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
               // Try to retransmit pending ATT Response (if any)
               multi_role_sendAttRsp();
             }
-            //if(pEvt->event_flag & MR_SCAN_REQ_EVT)
+            if(pEvt->event_flag & MR_ADV_DONE_EVT)
             {
+              s_adv_counter++;
+              if(APP_NUMBER_OF_MEASUREMENTS <= s_adv_counter)
+              {
+                HCI_EXT_AdvEventNoticeCmd(selfEntity, 0u);
 
+                s_adv_enable = FALSE;
+
+                /* Stop advertising. */
+                GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t),
+                                     &s_adv_enable, NULL);
+
+                g_events |= APP_BEGIN_CALCULATING_RSSI_EVENT;
+
+                Semaphore_post(sem);
+              }
             }
           }
           else
@@ -877,14 +921,15 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
 
         s_advint = MASTER_BROADCAST_ADV_INT;
         s_adv_enable = FALSE;
-        g_adv_channel = MASTER_BROADCAST_ADV_CHAN;
+        //g_adv_channel = MASTER_BROADCAST_ADV_CHAN;
+        s_adv_counter = 0u;
 
         /* Stop advertising. */
         GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t),
                              &s_adv_enable, NULL);
 
         /* Update the channel. */
-        GAPRole_SetParameter(GAPROLE_ADV_CHANNEL_MAP, sizeof(uint8_t),
+        //GAPRole_SetParameter(GAPROLE_ADV_CHANNEL_MAP, sizeof(uint8_t),\
                              &g_adv_channel, NULL);
 
         /* Update advertising data. */
@@ -899,26 +944,29 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
         GAP_SetParamValue(TGAP_CONN_ADV_INT_MIN, s_advint);
         GAP_SetParamValue(TGAP_CONN_ADV_INT_MAX, s_advint);
 
+        HCI_EXT_AdvEventNoticeCmd(selfEntity, MR_ADV_DONE_EVT);
+
         s_adv_enable = TRUE;
 
-        /* Start broadcasting. */
-        GAPRole_SetParameter(GAPROLE_ADV_NONCONN_ENABLED, sizeof(uint8_t),
+        /* Start advertising again. */
+        GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t),
                              &s_adv_enable, NULL);
       }
-      if(g_events & APP_BEGIN_IDLE_ADVERTISING_EVENT)
+
+      if(g_events & APP_BEGIN_CALCULATING_RSSI_EVENT)
       {
-        g_events &= ~APP_BEGIN_IDLE_ADVERTISING_EVENT;
+        g_events &= ~APP_BEGIN_CALCULATING_RSSI_EVENT;
 
         s_advint = CALCULATION_DONE_ADV_INT;
         s_adv_enable = FALSE;
-        g_adv_channel = DEFAULT_IDLE_ADV_CHAN;
+        //g_adv_channel = DEFAULT_IDLE_ADV_CHAN;
 
         /* Stop advertising. */
-        GAPRole_SetParameter(GAPROLE_ADV_NONCONN_ENABLED, sizeof(uint8_t),
+        GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t),
                              &s_adv_enable, NULL);
 
         /* Update the channel. */
-        GAPRole_SetParameter(GAPROLE_ADV_CHANNEL_MAP, sizeof(uint8_t),
+        //GAPRole_SetParameter(GAPROLE_ADV_CHANNEL_MAP, sizeof(uint8_t),\
                              &g_adv_channel, NULL);
 
         /* Update advertising data. */
@@ -933,9 +981,20 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
         GAP_SetParamValue(TGAP_CONN_ADV_INT_MIN, s_advint);
         GAP_SetParamValue(TGAP_CONN_ADV_INT_MAX, s_advint);
 
+        g_is_experiment = FALSE;
+
+        Util_startClock(&g_task_delay_clock);
+      }
+
+      if(g_events & APP_BEGIN_IDLE_ADVERTISING_EVENT)
+      {
+        g_events &= ~APP_BEGIN_IDLE_ADVERTISING_EVENT;
+
+        g_is_experiment = FALSE;
+
         s_adv_enable = TRUE;
 
-        /* Start broadcasting. */
+        /* Start advertising. */
         GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t),
                              &s_adv_enable, NULL);
       }
@@ -1237,8 +1296,6 @@ static uint8_t multi_role_eventCB(gapMultiRoleEvent_t *pEvent)
 */
 static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
 {
-  static uint16_t s_dev_counter = 0u;
-  static uint16_t s_err_counter = 0u;
   int8 rssi_val = 0u;
   size_t index;
   bool done = FALSE;
@@ -1297,28 +1354,32 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
     // a discovered device report
   case GAP_DEVICE_INFO_EVENT:
     {
-
       if(0u == memcmp(pEvent->deviceInfo.addr ,
                       g_my_devices.nodes[g_exp_values.dev_index].node_mac ,
                       B_ADDR_LEN))
       {
-        rssi_val = g_exp_values.rssi_vals[g_exp_values.dev_index][g_exp_values.exp_index];
-        if(0u == s_dev_counter)
+        if(3u == pEvent->deviceInfo.dataLen)
         {
-          g_exp_values.rssi_vals[g_exp_values.dev_index][g_exp_values.exp_index] = \
-              pEvent->deviceInfo.rssi;
-        }else{
-          g_exp_values.rssi_vals[g_exp_values.dev_index][g_exp_values.exp_index] = \
-              ((rssi_val/2) + (pEvent->deviceInfo.rssi/2));
+          GAPRole_CancelDiscovery();
+          Util_restartClock(&g_end_discovery_clock, 500u);
+          rssi_val = g_exp_values.rssi_vals[g_exp_values.dev_index][g_exp_values.exp_index];
+          if(0u == g_pack_counter)
+          {
+            g_exp_values.rssi_vals[g_exp_values.dev_index][g_exp_values.exp_index] = \
+                pEvent->deviceInfo.rssi;
+          }else{
+            g_exp_values.rssi_vals[g_exp_values.dev_index][g_exp_values.exp_index] = \
+                ((rssi_val/2) + (pEvent->deviceInfo.rssi/2));
+          }
+          g_pack_counter++;
         }
-        s_dev_counter++;
       }else{
-        s_err_counter++;
+        g_err_counter++;
       }
 
-      if(APP_NUMBER_OF_MEASUREMENTS == s_dev_counter)
+      if(APP_NUMBER_OF_MEASUREMENTS <= g_pack_counter)
       {
-        s_dev_counter = 0u;
+        g_is_experiment = FALSE;
       }
 
 #if 0
@@ -1342,18 +1403,30 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
     // end of discovery report
   case GAP_DEVICE_DISCOVERY_EVENT:
     {
-      if((0u != s_err_counter) || (APP_NUMBER_OF_MEASUREMENTS != s_dev_counter))
+      if(g_is_experiment)
       {
-        rssiadvertData[(5 + g_exp_values.dev_index)] = \
-            g_exp_values.rssi_vals[g_exp_values.dev_index][g_exp_values.exp_index];
+        GAPRole_StartDiscovery(DEFAULT_DISCOVERY_MODE,
+                               BROADCAST_DISCOVERY_PASSIVE_SCAN,
+                               DEFAULT_DISCOVERY_WHITE_LIST);
       }else{
-        rssiadvertData[(5 + g_exp_values.dev_index)] = 0u ;
+        if((0u != g_err_counter) || (APP_NUMBER_OF_MEASUREMENTS != g_pack_counter))
+        {
+          rssiadvertData[(5 + g_exp_values.dev_index)] = \
+              g_exp_values.rssi_vals[g_exp_values.dev_index][g_exp_values.exp_index];
+        }else{
+          rssiadvertData[(5 + g_exp_values.dev_index)] = 0u;
+        }
+
+        rssiadvertData[10] = APP_NUMBER_OF_MEASUREMENTS - g_pack_counter;
+
+        g_pack_counter = 0u;
+        g_err_counter = 0u;
+
+        g_events |= APP_BEGIN_CALCULATING_RSSI_EVENT;
+
+        // Wake up the application.
+        Semaphore_post(sem);
       }
-
-      g_events |= APP_BEGIN_IDLE_ADVERTISING_EVENT;
-
-      // Wake up the application.
-      Semaphore_post(sem);
 #if 0
       // discovery complete
       //scanningStarted = FALSE;
@@ -1394,7 +1467,9 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
         /* Turn off advertising if the initiator is base node.
          * TODO: Test MSB LSB bytes for mac address. */
         //if(0u == memcmp(pEvent->linkCmpl.devAddr, g_base_node.node_mac, B_ADDR_LEN))
+        if(!g_is_experiment)
         {
+          g_is_experiment = TRUE;
           uint8_t advertEnabled = FALSE;
           GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &advertEnabled, NULL);
           //Display_print0(dispHandle, 0, 0, "Can't adv: no links");
@@ -1635,6 +1710,8 @@ static void multi_role_handleKeys(uint8_t keys)
     else if (keys & KEY_RIGHT)
     {
       //TODO:Add shutdown here
+
+      Util_restartClock(&g_bug_clock, 1000u);
     }
     break; /* APP_STATE_IDLE and APP_STATE_CALCULATED_IDLE*/
   case APP_STATE_MASTER_BROADCASTER:
@@ -2229,15 +2306,15 @@ static void multi_role_addDeviceInfo(uint8_t *pAddr, uint8_t addrType)
     // Check if device is already in scan results
     for (i = 0; i < scanRes; i++)
     {
-      if (memcmp(pAddr, devList[i].addr , B_ADDR_LEN) == 0)
+      //if (memcmp(pAddr, devList[i].addr , B_ADDR_LEN) == 0)
       {
         return;
       }
     }
     
     // Add addr to scan result list
-    memcpy(devList[scanRes].addr, pAddr, B_ADDR_LEN);
-    devList[scanRes].addrType = addrType;
+    //memcpy(devList[scanRes].addr, pAddr, B_ADDR_LEN);
+    //devList[scanRes].addrType = addrType;
     
     // Increment scan result count
     scanRes++;
