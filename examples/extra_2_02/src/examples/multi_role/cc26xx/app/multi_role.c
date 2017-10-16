@@ -110,7 +110,7 @@
 #define DEFAULT_SVC_DISCOVERY_DELAY           1000
 
 // Scan parameters
-#define DEFAULT_BROADCAST_SCAN_DURATION       150
+#define DEFAULT_BROADCAST_SCAN_DURATION       125
 //#define MASTER_BROADCASTER_CHECK_SCAN_DUR     4000
 #define DEFAULT_SCAN_WIND                     80
 #define DEFAULT_SCAN_INT                      80
@@ -163,7 +163,7 @@
 #define MR_KEY_CHANGE_EVT                    0x0008
 #define MR_PAIRING_STATE_EVT                 0x0010
 #define MR_PASSCODE_NEEDED_EVT               0x0020
-#define MR_ADV_DONE_EVT                      0x0040
+#define MR_BROADCAST_DONE_EVT                0x0040
 //Application specific events
 #define APP_BEGIN_LISTENNING_EVENT          0x8000
 #define APP_BEGIN_BROADCASTING_EVENT        0x4000
@@ -173,7 +173,7 @@
 #define APP_RSSI_TO_VAL               256u
 #define APP_NUMBER_OF_NODES           20u
 #define APP_NUMBER_OF_EXPERIMENTS     5u
-#define APP_NUMBER_OF_MEASUREMENTS    1000u /*TODO: Make it 1000 for actual tests. */
+#define APP_NUMBER_OF_MEASUREMENTS    100u /*TODO: Make it 1000 for actual tests. */
 
 // Application states
 typedef enum {
@@ -214,6 +214,8 @@ typedef enum {
 static appState_t g_app_state = APP_STATE_IDLE;
 
 static bool g_is_experiment = FALSE;
+
+static bStatus_t g_ble_stat = 0u;
 
 //static uint8_t g_adv_channel = DEFAULT_IDLE_ADV_CHAN;
 
@@ -332,6 +334,10 @@ static network_dev_t g_my_devices =
   },
   {
    {0x84, 0xD1, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  {
+   {0x06, 0x91, 0xC1, 0xF8, 0xE6, 0xA0},
    FALSE
   },
  },
@@ -857,7 +863,7 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
               // Try to retransmit pending ATT Response (if any)
               multi_role_sendAttRsp();
             }
-            if(pEvt->event_flag & MR_ADV_DONE_EVT)
+            if(pEvt->event_flag & MR_BROADCAST_DONE_EVT)
             {
               s_adv_counter++;
               if(APP_NUMBER_OF_MEASUREMENTS <= s_adv_counter)
@@ -866,9 +872,11 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
 
                 s_adv_enable = FALSE;
 
-                /* Stop advertising. */
+                /* Stop broadcasting. */
                 GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t),
                                      &s_adv_enable, NULL);
+
+                g_my_devices.nodes[g_my_devices.my_index].done = TRUE;
 
                 g_events |= APP_BEGIN_CALCULATING_RSSI_EVENT;
 
@@ -946,11 +954,11 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
         GAP_SetParamValue(TGAP_CONN_ADV_INT_MIN, s_advint);
         GAP_SetParamValue(TGAP_CONN_ADV_INT_MAX, s_advint);
 
-        HCI_EXT_AdvEventNoticeCmd(selfEntity, MR_ADV_DONE_EVT);
+        HCI_EXT_AdvEventNoticeCmd(selfEntity, MR_BROADCAST_DONE_EVT);
 
         s_adv_enable = TRUE;
 
-        /* Start advertising again. */
+        /* Start broadcasting. */
         GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t),
                              &s_adv_enable, NULL);
       }
@@ -963,7 +971,7 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
         s_adv_enable = FALSE;
         //g_adv_channel = DEFAULT_IDLE_ADV_CHAN;
 
-        /* Stop advertising. */
+        /* Stop broadcasting. */
         GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t),
                              &s_adv_enable, NULL);
 
@@ -985,6 +993,8 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
 
         g_is_experiment = FALSE;
 
+        g_exp_values.dev_index++;
+
         Util_startClock(&g_task_delay_clock);
       }
 
@@ -993,6 +1003,11 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
         g_events &= ~APP_BEGIN_IDLE_ADVERTISING_EVENT;
 
         g_is_experiment = FALSE;
+
+        if(3u == g_exp_values.dev_index){
+          g_exp_values.dev_index = 0u;
+          g_my_devices.nodes[g_my_devices.my_index].done = FALSE;
+        }
 
         s_adv_enable = TRUE;
 
@@ -1342,11 +1357,11 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
   case GAP_END_DISCOVERABLE_DONE_EVENT:
     {
       // display advertising info depending on whether there are any connections
-      if (linkDB_NumActive() < maxNumBleConns)
+      //if (linkDB_NumActive() < maxNumBleConns)
       {
         //Display_print0(dispHandle, 0, 0, "Ready to Advertise");
       }
-      else
+      //else
       {
         //Display_print0(dispHandle, 0, 0, "Can't Adv : No links");
       }
@@ -1422,8 +1437,8 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
           rssiadvertData[(5 + g_exp_values.dev_index)] = 0u;
         }
 
-        rssiadvertData[10] = APP_NUMBER_OF_MEASUREMENTS - g_pack_counter;
-        rssiadvertData[15] = g_err_counter;
+        rssiadvertData[(15 + g_exp_values.dev_index)] = APP_NUMBER_OF_MEASUREMENTS - g_pack_counter;
+        rssiadvertData[(15 + g_exp_values.dev_index)] = g_err_counter;
 
         g_rssi_val = 0u;
         g_pack_counter = 0u;
@@ -1474,22 +1489,22 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
         /* Turn off advertising if the initiator is base node.
          * TODO: Test MSB LSB bytes for mac address. */
         //if(0u == memcmp(pEvent->linkCmpl.devAddr, g_base_node.node_mac, B_ADDR_LEN))
-        if(!g_is_experiment)
+        //if(!g_is_experiment)
         {
-          g_is_experiment = TRUE;
-          uint8_t advertEnabled = FALSE;
-          GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &advertEnabled, NULL);
+          //g_is_experiment = TRUE;
+          //uint8_t advertEnabled = FALSE;
+          //GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &advertEnabled, NULL);
           //Display_print0(dispHandle, 0, 0, "Can't adv: no links");
 
           // Store the event.
-          if(g_my_devices.my_index == g_exp_values.dev_index){
-            g_events |= APP_BEGIN_BROADCASTING_EVENT;
-          }else{
-            g_events |= APP_BEGIN_LISTENNING_EVENT;
-          }
+          //if(g_my_devices.my_index == g_exp_values.dev_index){
+            //g_events |= APP_BEGIN_BROADCASTING_EVENT;
+          //}else{
+            //g_events |= APP_BEGIN_LISTENNING_EVENT;
+          //}
 
           // Wake up the application.
-          Semaphore_post(sem);
+          //Semaphore_post(sem);
         }//else{
           GAPRole_TerminateConnection(pEvent->linkCmpl.connectionHandle);
         //}
@@ -1514,6 +1529,23 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
     // connection has been terminated
   case GAP_LINK_TERMINATED_EVENT:
     {
+      if(!g_is_experiment)
+      {
+        g_is_experiment = TRUE;
+        uint8_t advertEnabled = FALSE;
+        GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &advertEnabled, NULL);
+        //Display_print0(dispHandle, 0, 0, "Can't adv: no links");
+
+        // Store the event.
+        if(g_my_devices.my_index == g_exp_values.dev_index){
+          g_events |= APP_BEGIN_BROADCASTING_EVENT;
+        }else{
+          g_events |= APP_BEGIN_LISTENNING_EVENT;
+        }
+
+        // Wake up the application.
+        Semaphore_post(sem);
+      }
 #if !(defined(CC2650STK))
       //find index from connection handle
       connIndex = multi_role_mapConnHandleToIndex(pEvent->linkTerminate.connectionHandle);
