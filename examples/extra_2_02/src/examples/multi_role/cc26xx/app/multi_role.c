@@ -153,7 +153,7 @@
 // Task configuration
 #define MR_TASK_PRIORITY                     1
 #ifndef MR_TASK_STACK_SIZE
-#define MR_TASK_STACK_SIZE                   946
+#define MR_TASK_STACK_SIZE                   944
 #endif
 
 // Internal Events for RTOS application
@@ -170,9 +170,10 @@
 #define APP_BEGIN_CALCULATING_RSSI_EVENT    0x2000
 #define APP_BEGIN_IDLE_ADVERTISING_EVENT    0x1000
 
+#define APP_RSSI_TO_VAL               256u
 #define APP_NUMBER_OF_NODES           20u
 #define APP_NUMBER_OF_EXPERIMENTS     5u
-#define APP_NUMBER_OF_MEASUREMENTS    100u /*TODO: Make it 1000 for actual tests. */
+#define APP_NUMBER_OF_MEASUREMENTS    1000u /*TODO: Make it 1000 for actual tests. */
 
 // Application states
 typedef enum {
@@ -222,6 +223,7 @@ static Clock_Struct g_bug_clock;
 
 static uint16_t g_pack_counter = 0u;
 static uint16_t g_err_counter = 0u;
+static uint32_t g_rssi_val = 0u;
 
 #if !(defined(CC2650STK))
 // Key option state.
@@ -1296,7 +1298,7 @@ static uint8_t multi_role_eventCB(gapMultiRoleEvent_t *pEvent)
 */
 static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
 {
-  int8 rssi_val = 0u;
+  uint8_t last_rssi = 0u;
   size_t index;
   bool done = FALSE;
 
@@ -1362,19 +1364,20 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
         {
           GAPRole_CancelDiscovery();
           Util_restartClock(&g_end_discovery_clock, 500u);
-          rssi_val = g_exp_values.rssi_vals[g_exp_values.dev_index][g_exp_values.exp_index];
-          if(0u == g_pack_counter)
-          {
-            g_exp_values.rssi_vals[g_exp_values.dev_index][g_exp_values.exp_index] = \
-                pEvent->deviceInfo.rssi;
+          if(0u != pEvent->deviceInfo.rssi){
+            last_rssi = (APP_RSSI_TO_VAL - pEvent->deviceInfo.rssi);
+            if(last_rssi < 100){
+              g_rssi_val += last_rssi;
+              g_pack_counter++;
+            }else{
+              g_err_counter++;
+            }
           }else{
-            g_exp_values.rssi_vals[g_exp_values.dev_index][g_exp_values.exp_index] = \
-                ((rssi_val/2) + (pEvent->deviceInfo.rssi/2));
+            g_err_counter++;
           }
-          g_pack_counter++;
         }
       }else{
-        g_err_counter++;
+        //g_err_counter++;
       }
 
       if(APP_NUMBER_OF_MEASUREMENTS <= g_pack_counter)
@@ -1409,8 +1412,10 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
                                BROADCAST_DISCOVERY_PASSIVE_SCAN,
                                DEFAULT_DISCOVERY_WHITE_LIST);
       }else{
-        if((0u != g_err_counter) || (APP_NUMBER_OF_MEASUREMENTS != g_pack_counter))
+        if(0u != g_pack_counter)
         {
+          g_exp_values.rssi_vals[g_exp_values.dev_index][g_exp_values.exp_index] = \
+              (uint8_t)(g_rssi_val / g_pack_counter);
           rssiadvertData[(5 + g_exp_values.dev_index)] = \
               g_exp_values.rssi_vals[g_exp_values.dev_index][g_exp_values.exp_index];
         }else{
@@ -1418,7 +1423,9 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
         }
 
         rssiadvertData[10] = APP_NUMBER_OF_MEASUREMENTS - g_pack_counter;
+        rssiadvertData[15] = g_err_counter;
 
+        g_rssi_val = 0u;
         g_pack_counter = 0u;
         g_err_counter = 0u;
 
