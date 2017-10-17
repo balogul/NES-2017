@@ -215,8 +215,6 @@ static appState_t g_app_state = APP_STATE_IDLE;
 
 static bool g_is_experiment = FALSE;
 
-static bStatus_t g_ble_stat = 0u;
-
 //static uint8_t g_adv_channel = DEFAULT_IDLE_ADV_CHAN;
 
 static Clock_Struct g_task_delay_clock;
@@ -258,7 +256,6 @@ typedef struct
 
 typedef struct
 {
-  network_dev_t*  p_devs;
   size_t          dev_index;
   size_t          exp_index;
   uint8_t         rssi_vals[APP_NUMBER_OF_NODES][APP_NUMBER_OF_EXPERIMENTS];
@@ -346,7 +343,6 @@ static network_dev_t g_my_devices =
 
 static calc_rssi_t g_exp_values =
 {
- &g_my_devices,
  0u,
  0u,
 };
