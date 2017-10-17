@@ -873,7 +873,7 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
                 s_adv_enable = FALSE;
 
                 /* Stop broadcasting. */
-                GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t),
+                GAPRole_SetParameter(GAPROLE_ADV_NONCONN_ENABLED, sizeof(uint8_t),
                                      &s_adv_enable, NULL);
 
                 g_my_devices.nodes[g_my_devices.my_index].done = TRUE;
@@ -959,7 +959,7 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
         s_adv_enable = TRUE;
 
         /* Start broadcasting. */
-        GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t),
+        GAPRole_SetParameter(GAPROLE_ADV_NONCONN_ENABLED, sizeof(uint8_t),
                              &s_adv_enable, NULL);
       }
 
@@ -972,7 +972,7 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
         //g_adv_channel = DEFAULT_IDLE_ADV_CHAN;
 
         /* Stop broadcasting. */
-        GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t),
+        GAPRole_SetParameter(GAPROLE_ADV_NONCONN_ENABLED, sizeof(uint8_t),
                              &s_adv_enable, NULL);
 
         /* Update the channel. */

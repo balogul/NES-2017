@@ -951,7 +951,9 @@ static uint8_t gapRole_processGAPMsg(gapEventHdr_t *pMsg)
         //if advertising started
         if (pMsg->opcode == GAP_MAKE_DISCOVERABLE_DONE_EVENT)
         {
-          gapRole_AdvEnabled = TRUE;
+          if(!gapRole_AdvNonConnEnabled){
+            gapRole_AdvEnabled = TRUE;
+          }
         }
         //if advertising ended
         else
