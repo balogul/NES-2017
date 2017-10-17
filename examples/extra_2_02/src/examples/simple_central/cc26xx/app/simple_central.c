@@ -99,7 +99,7 @@
 #define SBC_CONNECTING_TIMEOUT_EVT	      	  0x0040
 
 // Maximum number of scan responses
-#define DEFAULT_MAX_SCAN_RES                  8
+#define DEFAULT_MAX_SCAN_RES                  25
 
 // Scan duration in ms
 #define DEFAULT_SCAN_DURATION                 4000
@@ -157,13 +157,13 @@
 #define DEFAULT_PASSCODE                      19655
 
 // Default GAP pairing mode
-#define DEFAULT_PAIRING_MODE                  GAPBOND_PAIRING_MODE_WAIT_FOR_REQ
+#define DEFAULT_PAIRING_MODE                  GAPBOND_PAIRING_MODE_NO_PAIRING
 
 // Default MITM mode (TRUE to require passcode or OOB when pairing)
 #define DEFAULT_MITM_MODE                     FALSE
 
 // Default bonding mode, TRUE to bond
-#define DEFAULT_BONDING_MODE                  TRUE
+#define DEFAULT_BONDING_MODE                  FALSE
 
 // Default GAP bonding I/O capabilities
 #define DEFAULT_IO_CAPABILITIES               GAPBOND_IO_CAP_DISPLAY_ONLY
@@ -183,6 +183,10 @@
 #ifndef SBC_TASK_STACK_SIZE
 #define SBC_TASK_STACK_SIZE                   864
 #endif
+
+#define APP_NUMBER_OF_NODES           20u
+#define APP_NUMBER_OF_EXPERIMENTS     5u
+#define APP_NUMBER_OF_MEASUREMENTS    100u /*TODO: Make it 1000 for actual tests. */
 
 // Application states
 typedef enum
@@ -236,6 +240,25 @@ typedef enum {
 /*********************************************************************
  * TYPEDEFS
  */
+
+typedef struct
+{
+  const uint8_t node_mac[B_ADDR_LEN];
+  bool          done;
+} __attribute__((__packed__)) node_info_t;
+
+typedef struct
+{
+  node_info_t   nodes[APP_NUMBER_OF_NODES];
+  size_t        my_index;
+} __attribute__((__packed__)) network_dev_t;
+
+typedef struct
+{
+  size_t          dev_index;
+  size_t          exp_index;
+  uint8_t         rssi_vals[APP_NUMBER_OF_NODES][APP_NUMBER_OF_EXPERIMENTS];
+} __attribute__((__packed__)) calc_rssi_t;
 
 // App event passed from profiles.
 typedef struct
@@ -300,6 +323,37 @@ static uint16_t events = 0;
 // Task configuration
 Task_Struct sbcTask;
 Char sbcTaskStack[SBC_TASK_STACK_SIZE];
+
+static node_info_t g_base_node =
+{
+ {0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+ FALSE
+};
+
+static network_dev_t g_my_devices =
+{
+ {
+  {
+   {0x04, 0x4B, 0xB6, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  {
+   {0x84, 0xD1, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  {
+   {0x06, 0x91, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+ },
+ 0u
+};
+
+static calc_rssi_t g_exp_values =
+{
+ 0u,
+ 0u,
+};
 
 // GAP GATT Attributes
 static const uint8_t attDeviceName[GAP_DEVICE_NAME_LEN] = "Simple BLE Central";
@@ -816,7 +870,7 @@ static void SimpleBLECentral_processRoleEvent(gapCentralRoleEvent_t *pEvent)
           // If service discovery not performed initiate service discovery
           if (charHdl == 0)
           {
-            Util_startClock(&startDiscClock);
+            //Util_startClock(&startDiscClock);
           }
 
           //Find device name in devList struct
