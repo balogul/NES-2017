@@ -326,7 +326,7 @@ Char sbcTaskStack[SBC_TASK_STACK_SIZE];
 
 static node_info_t g_base_node =
 {
- {0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+ {0x82, 0x41, 0xC2, 0xF8, 0xE6, 0xA0},
  FALSE
 };
 
@@ -852,7 +852,20 @@ static void SimpleBLECentral_processRoleEvent(gapCentralRoleEvent_t *pEvent)
 
         if (scanRes > 0)
         {
-        	Display_print0(dispHandle, ROW_SIX, 0, "<LEFT to browse");
+          uint8_t addrType;
+          uint8_t *peerAddr;
+          // connect to current device in scan result
+          peerAddr = devList[0].addr;
+          addrType = devList[0].addrType;
+
+          state = BLE_STATE_CONNECTING;
+
+          Util_startClock(&connectingClock);
+
+          GAPCentralRole_EstablishLink(DEFAULT_LINK_HIGH_DUTY_CYCLE,
+                                       DEFAULT_LINK_WHITE_LIST,
+                                       addrType, peerAddr);
+        	//Display_print0(dispHandle, ROW_SIX, 0, "<LEFT to browse");
         }
         Display_print0(dispHandle, ROW_SEVEN, 0, ">RIGHT to scan");
       }

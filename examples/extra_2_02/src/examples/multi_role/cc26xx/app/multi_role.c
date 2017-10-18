@@ -116,7 +116,7 @@
 #define DEFAULT_SCAN_INT                      80
 
 // Maximum number of scan responses
-#define DEFAULT_MAX_SCAN_RES                  20
+#define DEFAULT_MAX_SCAN_RES                  25
 
 // TRUE to filter discovery results on desired service UUID
 #define DEFAULT_DEV_DISC_BY_SVC_UUID          TRUE
@@ -153,7 +153,7 @@
 // Task configuration
 #define MR_TASK_PRIORITY                     1
 #ifndef MR_TASK_STACK_SIZE
-#define MR_TASK_STACK_SIZE                   944
+#define MR_TASK_STACK_SIZE                   946
 #endif
 
 // Internal Events for RTOS application
@@ -318,7 +318,7 @@ static uint8_t g_my_mac[B_ADDR_LEN];
 
 static node_info_t g_base_node =
 {
- {0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+ {0x82, 0x41, 0xC2, 0xF8, 0xE6, 0xA0},
  FALSE
 };
 
