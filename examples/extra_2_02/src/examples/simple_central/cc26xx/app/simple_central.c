@@ -98,6 +98,9 @@
 #define SBC_STATE_CHANGE_EVT                  0x0020
 #define SBC_CONNECTING_TIMEOUT_EVT	      	  0x0040
 
+#define APP_CONNECT_TO_NEXT_DEV_EVENT         0x8000
+#define APP_EXPERIMENT_NEXT_DEV_EVENT         0x4000
+
 // Maximum number of scan responses
 #define DEFAULT_MAX_SCAN_RES                  25
 
@@ -187,6 +190,8 @@
 #define APP_NUMBER_OF_NODES           20u
 #define APP_NUMBER_OF_EXPERIMENTS     5u
 #define APP_NUMBER_OF_MEASUREMENTS    100u /*TODO: Make it 1000 for actual tests. */
+
+#define APP_NUMBER_OF_TEST_NODES      3u
 
 // Application states
 typedef enum
@@ -313,6 +318,12 @@ static Clock_Struct startDiscClock;
 // Clock object used to timeout connection
 static Clock_Struct connectingClock;
 
+/* Delay clock after link termination. */
+static Clock_Struct g_conn_clock;
+
+/* Delay clock to wait experiment to finish. */
+static Clock_Struct g_exp_clock;
+
 // Queue object used for app messages
 static Queue_Struct appMsg;
 static Queue_Handle appMsgQueue;
@@ -361,6 +372,10 @@ static const uint8_t attDeviceName[GAP_DEVICE_NAME_LEN] = "Simple BLE Central";
 // Number of scan results and scan result index
 static uint8_t scanRes;
 static uint8_t scanIdx;
+
+static uint8_t g_connected_devs = 0u;
+static uint8_t g_conn_index = 0u;
+static bool g_link_try = FALSE;
 
 // Scan result list
 static devRecInfo_t devList[DEFAULT_MAX_SCAN_RES];
@@ -471,6 +486,14 @@ static gapBondCBs_t SimpleBLECentral_bondCB =
  * PUBLIC FUNCTIONS
  */
 
+void my_delay_clock_handler(UArg a0)
+{
+  events |= a0;
+
+  // Wake up the application thread when it waits for clock event
+  Semaphore_post(sem);
+}
+
 /*********************************************************************
  * @fn      SimpleBLEPeripheral_createTask
  *
@@ -523,6 +546,12 @@ static void SimpleBLECentral_init(void)
   // Setup discovery delay as a one-shot timer
   Util_constructClock(&startDiscClock, SimpleBLECentral_startDiscHandler,
                       DEFAULT_SVC_DISCOVERY_DELAY, 0, false, 0);
+
+  Util_constructClock(&g_conn_clock, my_delay_clock_handler,
+                      100u, 0, false, APP_CONNECT_TO_NEXT_DEV_EVENT);
+
+  Util_constructClock(&g_exp_clock, my_delay_clock_handler,
+                      15000u, 0, false, APP_EXPERIMENT_NEXT_DEV_EVENT);
 
   // Set initial connection parameter values
   GAP_SetParamValue(TGAP_CONN_EST_INT_MIN, INITIAL_MIN_CONN_INTERVAL);
@@ -617,6 +646,8 @@ static void SimpleBLECentral_init(void)
  */
 static void SimpleBLECentral_taskFxn(UArg a0, UArg a1)
 {
+  uint8_t addrType;
+  uint8_t *peerAddr;
   // Initialize application
   SimpleBLECentral_init();
 
@@ -670,6 +701,67 @@ static void SimpleBLECentral_taskFxn(UArg a0, UArg a1)
       events &= ~SBC_START_DISCOVERY_EVT;
 
       SimpleBLECentral_startDiscovery();
+    }
+
+    if(events & APP_CONNECT_TO_NEXT_DEV_EVENT)
+    {
+      events &= ~APP_CONNECT_TO_NEXT_DEV_EVENT;
+
+      if(!g_link_try)
+      {
+        if(g_conn_index == g_exp_values.dev_index)
+        {
+          g_conn_index++;
+        }
+
+        if(APP_NUMBER_OF_TEST_NODES == g_connected_devs)
+        {
+          g_exp_values.dev_index++;
+          if(APP_NUMBER_OF_TEST_NODES == g_exp_values.dev_index)
+          {
+            g_exp_values.dev_index = 0u;
+            g_exp_values.exp_index++;
+          }
+          else
+          {
+            Util_restartClock(&g_exp_clock, 15000u);
+          }
+          g_conn_index = 0u;
+          g_connected_devs = 0u;
+        }
+        else
+        {
+          if((APP_NUMBER_OF_TEST_NODES - 1u) == g_connected_devs)
+          {
+            // connect to broadcaster in scan result
+            peerAddr = (uint8_t*)(g_my_devices.nodes[g_exp_values.dev_index].node_mac);
+          }
+          else //if(0u == g_connected_devs)
+          {
+            // connect to next device in scan result
+            peerAddr = (uint8_t*)(g_my_devices.nodes[g_conn_index].node_mac);
+          }
+          addrType = ADDRTYPE_PUBLIC;
+
+          state = BLE_STATE_CONNECTING;
+
+          Util_startClock(&connectingClock);
+
+          g_link_try = TRUE;
+
+          GAPCentralRole_EstablishLink(DEFAULT_LINK_HIGH_DUTY_CYCLE,
+                                       DEFAULT_LINK_WHITE_LIST,
+                                       addrType, peerAddr);
+        }
+      }
+    }
+
+    if(events & APP_EXPERIMENT_NEXT_DEV_EVENT)
+    {
+      events &= ~APP_EXPERIMENT_NEXT_DEV_EVENT;
+
+      // Discover devices
+      SimpleBLECentral_discoverDevices();
     }
   }
 }
@@ -850,22 +942,15 @@ static void SimpleBLECentral_processRoleEvent(gapCentralRoleEvent_t *pEvent)
         Display_print1(dispHandle, ROW_ONE, 0, "Devices found %d", scanRes);
         state = BLE_STATE_DISCOVERED;
 
-        if (scanRes > 0)
+        //if (scanRes > 0)
+        /* TODO:It has to be number of nodes for test purposes. */
+        if(APP_NUMBER_OF_TEST_NODES == scanRes)
         {
-          uint8_t addrType;
-          uint8_t *peerAddr;
-          // connect to current device in scan result
-          peerAddr = devList[0].addr;
-          addrType = devList[0].addrType;
-
-          state = BLE_STATE_CONNECTING;
-
-          Util_startClock(&connectingClock);
-
-          GAPCentralRole_EstablishLink(DEFAULT_LINK_HIGH_DUTY_CYCLE,
-                                       DEFAULT_LINK_WHITE_LIST,
-                                       addrType, peerAddr);
-        	//Display_print0(dispHandle, ROW_SIX, 0, "<LEFT to browse");
+          Util_restartClock(&g_conn_clock, 100u);
+        }
+        else
+        {
+          Util_restartClock(&g_exp_clock, 4000u);
         }
         Display_print0(dispHandle, ROW_SEVEN, 0, ">RIGHT to scan");
       }
@@ -880,6 +965,7 @@ static void SimpleBLECentral_processRoleEvent(gapCentralRoleEvent_t *pEvent)
           connHandle = pEvent->linkCmpl.connectionHandle;
           procedureInProgress = TRUE;
 
+#if 0
           // If service discovery not performed initiate service discovery
           if (charHdl == 0)
           {
@@ -895,12 +981,14 @@ static void SimpleBLECentral_processRoleEvent(gapCentralRoleEvent_t *pEvent)
         		  break;
         	  }
           }
+
           Display_clearLines(dispHandle, ROW_ONE, ROW_SEVEN);
           Display_print1(dispHandle, ROW_ONE, 0, "%s", devList[i].localName);
           Display_print1(dispHandle, ROW_TWO, 0, "%s", Util_convertBdAddr2Str(pEvent->linkCmpl.devAddr));
           Display_print0(dispHandle, ROW_THREE, 0, "Connected");
           selectedMenuItem = MENU_ITEM_CONN_PARAM_UPDATE;
           Display_print0(dispHandle, ROW_SEVEN, 0, ">Param upd req");
+#endif
         }
         else
         {
@@ -933,6 +1021,17 @@ static void SimpleBLECentral_processRoleEvent(gapCentralRoleEvent_t *pEvent)
         Display_print1(dispHandle, ROW_TWO, 0, "Reason: %d", pEvent->linkTerminate.reason);
         Display_print0(dispHandle, ROW_SEVEN, 0, ">RIGHT to scan");
         selectedMenuItem = MENU_ITEM_CONN_PARAM_UPDATE;
+
+        if(g_link_try)
+        {
+          g_link_try = FALSE;
+          Util_restartClock(&g_conn_clock, 100u);
+          g_connected_devs++;
+          if(g_conn_index <= APP_NUMBER_OF_TEST_NODES)
+          {
+            g_conn_index++;
+          }
+        }
       }
       break;
 

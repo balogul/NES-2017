@@ -153,7 +153,7 @@
 // Task configuration
 #define MR_TASK_PRIORITY                     1
 #ifndef MR_TASK_STACK_SIZE
-#define MR_TASK_STACK_SIZE                   946
+#define MR_TASK_STACK_SIZE                   944
 #endif
 
 // Internal Events for RTOS application
@@ -397,6 +397,13 @@ static uint8_t rssiadvertData[] =
   0x02,   // length of this data
   GAP_ADTYPE_FLAGS,
   DEFAULT_DISCOVERABLE_MODE | GAP_ADTYPE_FLAGS_BREDR_NOT_SUPPORTED,
+
+  // service UUID, to notify central devices what services are included
+  // in this peripheral
+  0x03,   // length of this data
+  GAP_ADTYPE_16BIT_MORE,      // some of the UUID's, but not all
+  LO_UINT16(SIMPLEPROFILE_SERV_UUID),
+  HI_UINT16(SIMPLEPROFILE_SERV_UUID),
 
   // RSSI values from the experiments
   0x15,   // length of this data
@@ -1427,10 +1434,10 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
         {
           g_exp_values.rssi_vals[g_exp_values.dev_index][g_exp_values.exp_index] = \
               (uint8_t)(g_rssi_val / g_pack_counter);
-          rssiadvertData[(5 + g_exp_values.dev_index)] = \
+          rssiadvertData[(9 + g_exp_values.dev_index)] = \
               g_exp_values.rssi_vals[g_exp_values.dev_index][g_exp_values.exp_index];
         }else{
-          rssiadvertData[(5 + g_exp_values.dev_index)] = 0u;
+          rssiadvertData[(9 + g_exp_values.dev_index)] = 0u;
         }
 
         rssiadvertData[(15 + g_exp_values.dev_index)] = APP_NUMBER_OF_MEASUREMENTS - g_pack_counter;
