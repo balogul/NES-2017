@@ -173,7 +173,7 @@
 #define APP_RSSI_TO_VAL               256u
 #define APP_NUMBER_OF_NODES           20u
 #define APP_NUMBER_OF_EXPERIMENTS     5u
-#define APP_NUMBER_OF_MEASUREMENTS    100u /*TODO: Make it 1000 for actual tests. */
+#define APP_NUMBER_OF_MEASUREMENTS    1000u /*TODO: Make it 1000 for actual tests. */
 
 // Application states
 typedef enum {
@@ -924,6 +924,8 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
         GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t),
                              &s_adv_enable, NULL);
 
+        Util_restartClock(&g_end_discovery_clock, 30000u);
+
         GAPRole_StartDiscovery(DEFAULT_DISCOVERY_MODE,
                                BROADCAST_DISCOVERY_PASSIVE_SCAN,
                                DEFAULT_DISCOVERY_WHITE_LIST);
@@ -1007,9 +1009,15 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
 
         g_is_experiment = FALSE;
 
-        if(3u == g_exp_values.dev_index){
+        if(APP_NUMBER_OF_NODES == g_exp_values.dev_index){
           g_exp_values.dev_index = 0u;
+          g_exp_values.exp_index++;
           g_my_devices.nodes[g_my_devices.my_index].done = FALSE;
+          if(APP_NUMBER_OF_EXPERIMENTS == g_exp_values.exp_index){
+            g_exp_values.exp_index = 0u;
+            //Write values to ROM
+            osal_snv_write(BLE_NVID_CUST_START, sizeof(g_exp_values), &g_exp_values);
+          }
         }
 
         s_adv_enable = TRUE;
@@ -1430,7 +1438,7 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
                                BROADCAST_DISCOVERY_PASSIVE_SCAN,
                                DEFAULT_DISCOVERY_WHITE_LIST);
       }else{
-        if(0u != g_pack_counter)
+        if((0u != g_pack_counter) && (100u >= g_err_counter))
         {
           g_exp_values.rssi_vals[g_exp_values.dev_index][g_exp_values.exp_index] = \
               (uint8_t)(g_rssi_val / g_pack_counter);
@@ -1440,8 +1448,8 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
           rssiadvertData[(9 + g_exp_values.dev_index)] = 0u;
         }
 
-        rssiadvertData[(15 + g_exp_values.dev_index)] = APP_NUMBER_OF_MEASUREMENTS - g_pack_counter;
-        rssiadvertData[(15 + g_exp_values.dev_index)] = g_err_counter;
+        //rssiadvertData[(15 + g_exp_values.dev_index)] = APP_NUMBER_OF_MEASUREMENTS - g_pack_counter;
+        //rssiadvertData[(15 + g_exp_values.dev_index)] = g_err_counter;
 
         g_rssi_val = 0u;
         g_pack_counter = 0u;
