@@ -102,7 +102,7 @@
 #define APP_EXPERIMENT_NEXT_DEV_EVENT         0x4000
 
 // Maximum number of scan responses
-#define DEFAULT_MAX_SCAN_RES                  25
+#define DEFAULT_MAX_SCAN_RES                  40
 
 // Scan duration in ms
 #define DEFAULT_SCAN_DURATION                 4000
@@ -189,9 +189,9 @@
 
 #define APP_NUMBER_OF_NODES           20u
 #define APP_NUMBER_OF_EXPERIMENTS     5u
-#define APP_NUMBER_OF_MEASUREMENTS    100u /*TODO: Make it 1000 for actual tests. */
+#define APP_NUMBER_OF_MEASUREMENTS    1000u /*TODO: Make it 1000 for actual tests. */
 
-#define APP_NUMBER_OF_TEST_NODES      3u
+//#define APP_NUMBER_OF_TEST_NODES      3u
 
 // Application states
 typedef enum
@@ -344,23 +344,111 @@ static node_info_t g_base_node =
 static network_dev_t g_my_devices =
 {
  {
+  /*Node 0*/
   {
    {0x04, 0x4B, 0xB6, 0xF8, 0xE6, 0xA0},
    FALSE
   },
+  /*Node 1*/
   {
    {0x84, 0xD1, 0xC1, 0xF8, 0xE6, 0xA0},
    FALSE
   },
+  /*Node 2*/
   {
    {0x06, 0x91, 0xC1, 0xF8, 0xE6, 0xA0},
    FALSE
   },
+  /*Node 3*/
+  {
+   {0x82, 0xC3, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 4*/
+  {
+   {0x87, 0x15, 0xB6, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 5*/
+  {
+   {0x06, 0x52, 0xB6, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 6*/
+  {
+   {0x07, 0x83, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 7*/
+  {
+   {0x01, 0x65, 0xC3, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 8*/
+  {
+   {0x00, 0x18, 0xAE, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 9*/
+  {
+   {0x86, 0xEB, 0xAD, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 10*/
+  {
+   {0x85, 0x95, 0xB6, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 11*/
+  {
+   {0x83, 0x0A, 0xAE, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 12*/
+  {
+   {0x82, 0x29, 0xC3, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 13*/
+  {
+   {0x04, 0xF4, 0xAD, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 14*/
+  {
+   {0x81, 0x1B, 0xAE, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 15*/
+  {
+   {0x86, 0xBD, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 16*/
+  {
+   {0x84, 0x2C, 0xC2, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 17*/
+  {
+   {0x00, 0x9F, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 18*/
+  {
+   {0x02, 0x03, 0xAE, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 19*/
+  {
+   {0x00, 0xA3, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  }
  },
  0u
 };
 
-static calc_rssi_t g_exp_values =
+static calc_rssi_t g_exp_values[APP_NUMBER_OF_NODES] =
 {
  0u,
  0u,
@@ -551,7 +639,7 @@ static void SimpleBLECentral_init(void)
                       100u, 0, false, APP_CONNECT_TO_NEXT_DEV_EVENT);
 
   Util_constructClock(&g_exp_clock, my_delay_clock_handler,
-                      15000u, 0, false, APP_EXPERIMENT_NEXT_DEV_EVENT);
+                      11000u, 0, false, APP_EXPERIMENT_NEXT_DEV_EVENT);
 
   // Set initial connection parameter values
   GAP_SetParamValue(TGAP_CONN_EST_INT_MIN, INITIAL_MIN_CONN_INTERVAL);
@@ -561,7 +649,7 @@ static void SimpleBLECentral_init(void)
 
   // Construct clock for connecting timeout
   Util_constructClock(&connectingClock, SimpleBLECentral_timeoutConnecting,
-		  	  	  	  DEFAULT_SCAN_DURATION, 0, false, 0);
+                      3000u, 0, false, 0);
 
   Board_initKeys(SimpleBLECentral_keyChangeHandler);
 
@@ -709,32 +797,32 @@ static void SimpleBLECentral_taskFxn(UArg a0, UArg a1)
 
       if(!g_link_try)
       {
-        if(g_conn_index == g_exp_values.dev_index)
+        if(g_conn_index == g_exp_values[0].dev_index)
         {
           g_conn_index++;
         }
 
-        if(APP_NUMBER_OF_TEST_NODES == g_connected_devs)
+        if(APP_NUMBER_OF_NODES == g_connected_devs)
         {
-          g_exp_values.dev_index++;
-          if(APP_NUMBER_OF_TEST_NODES == g_exp_values.dev_index)
+          g_exp_values[0].dev_index++;
+          if(APP_NUMBER_OF_NODES == g_exp_values[0].dev_index)
           {
-            g_exp_values.dev_index = 0u;
-            g_exp_values.exp_index++;
+            g_exp_values[0].dev_index = 0u;
+            g_exp_values[0].exp_index++;
           }
           else
           {
-            Util_restartClock(&g_exp_clock, 15000u);
+            Util_restartClock(&g_exp_clock, 11000u);
           }
           g_conn_index = 0u;
           g_connected_devs = 0u;
         }
         else
         {
-          if((APP_NUMBER_OF_TEST_NODES - 1u) == g_connected_devs)
+          if((APP_NUMBER_OF_NODES - 1u) == g_connected_devs)
           {
             // connect to broadcaster in scan result
-            peerAddr = (uint8_t*)(g_my_devices.nodes[g_exp_values.dev_index].node_mac);
+            peerAddr = (uint8_t*)(g_my_devices.nodes[g_exp_values[0].dev_index].node_mac);
           }
           else //if(0u == g_connected_devs)
           {
@@ -745,7 +833,7 @@ static void SimpleBLECentral_taskFxn(UArg a0, UArg a1)
 
           state = BLE_STATE_CONNECTING;
 
-          Util_startClock(&connectingClock);
+          Util_restartClock(&connectingClock, 1000u);
 
           g_link_try = TRUE;
 
@@ -870,6 +958,16 @@ static void SimpleBLECentral_processAppMsg(sbcEvt_t *pMsg)
     case SBC_CONNECTING_TIMEOUT_EVT:
       {
     	  GAPCentralRole_TerminateLink(connHandle);
+        if(g_link_try)
+        {
+          g_link_try = FALSE;
+          Util_restartClock(&g_conn_clock, 100u);
+          g_connected_devs++;
+          if(g_conn_index <= APP_NUMBER_OF_NODES)
+          {
+            g_conn_index++;
+          }
+        }
       }
 
     default:
@@ -943,14 +1041,13 @@ static void SimpleBLECentral_processRoleEvent(gapCentralRoleEvent_t *pEvent)
         state = BLE_STATE_DISCOVERED;
 
         //if (scanRes > 0)
-        /* TODO:It has to be number of nodes for test purposes. */
-        if(APP_NUMBER_OF_TEST_NODES == scanRes)
+        if(APP_NUMBER_OF_NODES == scanRes)
         {
           Util_restartClock(&g_conn_clock, 100u);
         }
         else
         {
-          Util_restartClock(&g_exp_clock, 4000u);
+          Util_restartClock(&g_exp_clock, 1000u);
         }
         Display_print0(dispHandle, ROW_SEVEN, 0, ">RIGHT to scan");
       }
@@ -1027,7 +1124,7 @@ static void SimpleBLECentral_processRoleEvent(gapCentralRoleEvent_t *pEvent)
           g_link_try = FALSE;
           Util_restartClock(&g_conn_clock, 100u);
           g_connected_devs++;
-          if(g_conn_index <= APP_NUMBER_OF_TEST_NODES)
+          if(g_conn_index <= APP_NUMBER_OF_NODES)
           {
             g_conn_index++;
           }
@@ -1166,11 +1263,11 @@ static void SimpleBLECentral_handleKeys(uint8_t shift, uint8_t keys)
 
 						state = BLE_STATE_CONNECTING;
 
-						Util_startClock(&connectingClock);
+						//Util_startClock(&connectingClock);
 
-						GAPCentralRole_EstablishLink(DEFAULT_LINK_HIGH_DUTY_CYCLE,
-							                     	 DEFAULT_LINK_WHITE_LIST,
-													 addrType, peerAddr);
+						//GAPCentralRole_EstablishLink(DEFAULT_LINK_HIGH_DUTY_CYCLE,\
+							                     	       DEFAULT_LINK_WHITE_LIST,\
+													                 addrType, peerAddr);
 
 						Display_clearLines(dispHandle, ROW_FOUR, ROW_SEVEN);
 						Display_print0(dispHandle, ROW_TWO, 0, Util_convertBdAddr2Str(peerAddr));
