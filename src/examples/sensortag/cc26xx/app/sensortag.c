@@ -105,14 +105,14 @@
  */
 
 // How often to perform periodic event (in milliseconds)
-#define ST_PERIODIC_EVT_PERIOD               1000
+#define ST_PERIODIC_EVT_PERIOD               5000
 
 // What is the advertising interval when device is discoverable
 // (units of 625us, 160=100ms)
 #define DEFAULT_ADVERTISING_INTERVAL          160
 
 // General discoverable mode advertises indefinitely
-#define DEFAULT_DISCOVERABLE_MODE             GAP_ADTYPE_FLAGS_LIMITED
+#define DEFAULT_DISCOVERABLE_MODE             GAP_ADTYPE_FLAGS_GENERAL
 
 // Minimum connection interval (units of 1.25ms, 80=100ms) if automatic
 // parameter update request is enabled
@@ -168,6 +168,9 @@
 #define OAD_PACKET_SIZE                       18
 #define KEY_STATE_OFFSET                      13 // Offset in advertising data
 
+#define APP_NUMBER_OF_NODES   20u
+#define APP_INTERVAL_BASE     45u
+
 /*******************************************************************************
  * TYPEDEFS
  */
@@ -179,6 +182,18 @@ typedef struct
   uint8_t serviceID; // New status
   uint8_t paramID;
 } stEvt_t;
+
+typedef struct
+{
+  const uint8_t node_mac[B_ADDR_LEN];
+  bool          done;
+} __attribute__((__packed__)) node_info_t;
+
+typedef struct
+{
+  node_info_t nodes[APP_NUMBER_OF_NODES];
+  uint8_t     my_index;
+} __attribute__((__packed__)) network_dev_t;
 
 /*******************************************************************************
  * GLOBAL VARIABLES
@@ -204,6 +219,113 @@ PIN_Handle hGpioPin;
 static Task_Struct sensorTagTask;
 static Char sensorTagTaskStack[ST_TASK_STACK_SIZE];
 
+static network_dev_t g_my_devices =
+{
+ {
+  /*Node 0*/
+  {
+   {0x04, 0x4B, 0xB6, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 1*/
+  {
+   {0x84, 0xD1, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 2*/
+  {
+   {0x06, 0x91, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 3*/
+  {
+   {0x82, 0xC3, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 4*/
+  {
+   {0x87, 0x15, 0xB6, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 5*/
+  {
+   {0x82, 0x41, 0xC2, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 6*/
+  {
+   {0x07, 0x83, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 7*/
+  {
+   {0x01, 0x65, 0xC3, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 8*/
+  {
+   {0x00, 0x18, 0xAE, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 9*/
+  {
+   {0x86, 0xEB, 0xAD, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 10*/
+  {
+   {0x85, 0x95, 0xB6, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 11*/
+  {
+   {0x83, 0x0A, 0xAE, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 12*/
+  {
+   {0x82, 0x29, 0xC3, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 13*/
+  {
+   {0x04, 0xF4, 0xAD, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 14*/
+  {
+   {0x81, 0x1B, 0xAE, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 15*/
+  {
+   {0x86, 0xBD, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 16*/
+  {
+   {0x84, 0x2C, 0xC2, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 17*/
+  {
+   {0x00, 0x9F, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 18*/
+  {
+   {0x02, 0x03, 0xAE, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 19*/
+  {
+   {0x00, 0xA3, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  }
+ },
+ 0u
+};
+
 // Entity ID globally used to check for source and/or destination of messages
 
 // Clock instances for internal periodic events.
@@ -222,24 +344,6 @@ static uint8_t selfTestMap;
 // GAP - SCAN RSP data (max size = 31 bytes)
 static uint8_t scanRspData[] =
 {
-  // complete name
-  0x11,   // length of this data
-  GAP_ADTYPE_LOCAL_NAME_COMPLETE,
-#ifdef CC1350STK
-  'C', 'C', '1', '3', '5', '0', ' ',
-#else
-  'C', 'C', '2', '6', '5', '0', ' ',
-#endif
-  'S', 'e', 'n',  's',  'o',  'r',  'T',  'a',  'g',
-
-  // connection interval range
-  0x05,   // length of this data
-  GAP_ADTYPE_SLAVE_CONN_INTERVAL_RANGE,
-  LO_UINT16(DEFAULT_DESIRED_MIN_CONN_INTERVAL),
-  HI_UINT16(DEFAULT_DESIRED_MIN_CONN_INTERVAL),
-  LO_UINT16(DEFAULT_DESIRED_MAX_CONN_INTERVAL),
-  HI_UINT16(DEFAULT_DESIRED_MAX_CONN_INTERVAL),
-
   // Tx power level
   0x02,   // length of this data
   GAP_ADTYPE_POWER_LEVEL,
@@ -256,6 +360,11 @@ static uint8_t advertData[] =
   0x02,   // length of this data
   GAP_ADTYPE_FLAGS,
   DEFAULT_DISCOVERABLE_MODE | GAP_ADTYPE_FLAGS_BREDR_NOT_SUPPORTED,
+
+  // complete name
+  0x07,   // length of this data
+  GAP_ADTYPE_LOCAL_NAME_COMPLETE,
+  'N', 'o', 'd', 'e', 'X', 'X',
 
   // service UUID, to notify central devices what services are included
   // in this peripheral
@@ -422,7 +531,7 @@ static void SensorTag_init(void)
   // Setup the GAP Peripheral Role Profile
   {
     // For all hardware platforms, device starts advertising upon initialization
-    uint8_t initialAdvertEnable = TRUE;
+    uint8_t initialAdvertEnable = FALSE;
 
     // By setting this to zero, the device will go into the waiting state after
     // being discoverable for 30.72 second, and will not being advertising again
@@ -736,6 +845,8 @@ static void SensorTag_stateChangeCB(gaprole_States_t newState)
  */
 static void SensorTag_processStateChangeEvt(gaprole_States_t newState)
 {
+  uint8_t index;
+  bool done = FALSE;
 #ifdef PLUS_BROADCASTER
   static bool firstConnFlag = false;
 #endif // PLUS_BROADCASTER
@@ -766,6 +877,114 @@ static void SensorTag_processStateChangeEvt(gaprole_States_t newState)
       systemId[5] = ownAddress[3];
 
       DevInfo_SetParameter(DEVINFO_SYSTEM_ID, DEVINFO_SYSTEM_ID_LEN, systemId);
+
+      for(index = 0u ; ((index < APP_NUMBER_OF_NODES) && (FALSE == done)) ; index++)
+      {
+        if(0u == memcmp(g_my_devices.nodes[index].node_mac, ownAddress, B_ADDR_LEN))
+        {
+          g_my_devices.my_index = index;
+
+          switch(g_my_devices.my_index)
+          {
+          case 0:
+            advertData[9]  = '0';
+            advertData[10] = '0';
+            break;
+          case 1:
+            advertData[9]  = '0';
+            advertData[10] = '1';
+            break;
+          case 2:
+            advertData[9]  = '0';
+            advertData[10] = '2';
+            break;
+          case 3:
+            advertData[9]  = '0';
+            advertData[10] = '3';
+            break;
+          case 4:
+            advertData[9]  = '0';
+            advertData[10] = '4';
+            break;
+          case 5:
+            advertData[9]  = '0';
+            advertData[10] = '5';
+            break;
+          case 6:
+            advertData[9]  = '0';
+            advertData[10] = '6';
+            break;
+          case 7:
+            advertData[9]  = '0';
+            advertData[10] = '7';
+            break;
+          case 8:
+            advertData[9]  = '0';
+            advertData[10] = '8';
+            break;
+          case 9:
+            advertData[9]  = '0';
+            advertData[10] = '9';
+            break;
+          case 10:
+            advertData[9]  = '1';
+            advertData[10] = '0';
+            break;
+          case 11:
+            advertData[9]  = '1';
+            advertData[10] = '1';
+            break;
+          case 12:
+            advertData[9]  = '1';
+            advertData[10] = '2';
+            break;
+          case 13:
+            advertData[9]  = '1';
+            advertData[10] = '3';
+            break;
+          case 14:
+            advertData[9]  = '1';
+            advertData[10] = '4';
+            break;
+          case 15:
+            advertData[9]  = '1';
+            advertData[10] = '5';
+            break;
+          case 16:
+            advertData[9]  = '1';
+            advertData[10] = '6';
+            break;
+          case 17:
+            advertData[9]  = '1';
+            advertData[10] = '7';
+            break;
+          case 18:
+            advertData[9]  = '1';
+            advertData[10] = '8';
+            break;
+          case 19:
+            advertData[9]  = '1';
+            advertData[10] = '9';
+            break;
+          }
+          // set advert data
+          GAPRole_SetParameter(GAPROLE_ADVERT_DATA, sizeof(advertData),
+                               advertData);
+
+          uint16_t advInt = APP_INTERVAL_BASE + g_my_devices.my_index;
+
+          GAP_SetParamValue(TGAP_LIM_DISC_ADV_INT_MIN, advInt);
+          GAP_SetParamValue(TGAP_LIM_DISC_ADV_INT_MAX, advInt);
+          GAP_SetParamValue(TGAP_GEN_DISC_ADV_INT_MIN, advInt);
+          GAP_SetParamValue(TGAP_GEN_DISC_ADV_INT_MAX, advInt);
+
+          done = TRUE;
+
+          // Set the GAP Role Parameters
+          GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t),
+                               &done);
+        }
+      }
     }
     break;
 

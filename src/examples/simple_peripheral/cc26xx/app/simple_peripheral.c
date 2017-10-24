@@ -156,6 +156,8 @@
 #define SBP_PERIODIC_EVT                      0x0004
 #define SBP_CONN_EVT_END_EVT                  0x0008
 
+#define APP_NUMBER_OF_NODES                   20u
+
 /*********************************************************************
  * TYPEDEFS
  */
@@ -165,6 +167,18 @@ typedef struct
 {
   appEvtHdr_t hdr;  // event header.
 } sbpEvt_t;
+
+typedef struct
+{
+  const uint8_t node_mac[B_ADDR_LEN];
+  bool          done;
+} __attribute__((__packed__)) node_info_t;
+
+typedef struct
+{
+  node_info_t nodes[APP_NUMBER_OF_NODES];
+  uint8_t     my_index;
+} __attribute__((__packed__)) network_dev_t;
 
 /*********************************************************************
  * GLOBAL VARIABLES
@@ -203,43 +217,121 @@ static uint16_t events;
 Task_Struct sbpTask;
 Char sbpTaskStack[SBP_TASK_STACK_SIZE];
 
+static uint8_t g_my_mac[B_ADDR_LEN];
+
+static network_dev_t g_my_devices =
+{
+ {
+  /*Node 0*/
+  {
+   {0x04, 0x4B, 0xB6, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 1*/
+  {
+   {0x84, 0xD1, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 2*/
+  {
+   {0x06, 0x91, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 3*/
+  {
+   {0x82, 0xC3, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 4*/
+  {
+   {0x87, 0x15, 0xB6, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 5*/
+  {
+   {0x82, 0x41, 0xC2, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 6*/
+  {
+   {0x07, 0x83, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 7*/
+  {
+   {0x01, 0x65, 0xC3, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 8*/
+  {
+   {0x00, 0x18, 0xAE, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 9*/
+  {
+   {0x86, 0xEB, 0xAD, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 10*/
+  {
+   {0x85, 0x95, 0xB6, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 11*/
+  {
+   {0x83, 0x0A, 0xAE, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 12*/
+  {
+   {0x82, 0x29, 0xC3, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 13*/
+  {
+   {0x04, 0xF4, 0xAD, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 14*/
+  {
+   {0x81, 0x1B, 0xAE, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 15*/
+  {
+   {0x86, 0xBD, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 16*/
+  {
+   {0x84, 0x2C, 0xC2, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 17*/
+  {
+   {0x00, 0x9F, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 18*/
+  {
+   {0x02, 0x03, 0xAE, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 19*/
+  {
+   {0x00, 0xA3, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  }
+ },
+ 0u
+};
+
 // Profile state and parameters
 //static gaprole_States_t gapProfileState = GAPROLE_INIT;
 
 // GAP - SCAN RSP data (max size = 31 bytes)
 static uint8_t scanRspData[] =
 {
-  // complete name
-  0x14,   // length of this data
-  GAP_ADTYPE_LOCAL_NAME_COMPLETE,
-  'S',
-  'i',
-  'm',
-  'p',
-  'l',
-  'e',
-  'B',
-  'L',
-  'E',
-  'P',
-  'e',
-  'r',
-  'i',
-  'p',
-  'h',
-  'e',
-  'r',
-  'a',
-  'l',
-
-  // connection interval range
-  0x05,   // length of this data
-  GAP_ADTYPE_SLAVE_CONN_INTERVAL_RANGE,
-  LO_UINT16(DEFAULT_DESIRED_MIN_CONN_INTERVAL),   // 100ms
-  HI_UINT16(DEFAULT_DESIRED_MIN_CONN_INTERVAL),
-  LO_UINT16(DEFAULT_DESIRED_MAX_CONN_INTERVAL),   // 1s
-  HI_UINT16(DEFAULT_DESIRED_MAX_CONN_INTERVAL),
-
   // Tx power level
   0x02,   // length of this data
   GAP_ADTYPE_POWER_LEVEL,
@@ -256,6 +348,11 @@ static uint8_t advertData[] =
   0x02,   // length of this data
   GAP_ADTYPE_FLAGS,
   DEFAULT_DISCOVERABLE_MODE | GAP_ADTYPE_FLAGS_BREDR_NOT_SUPPORTED,
+
+  // complete name
+  0x07,   // length of this data
+  GAP_ADTYPE_LOCAL_NAME_COMPLETE,
+  'N', 'o', 'd', 'e', 'X', 'X',
 
   // service UUID, to notify central devices what services are included
   // in this peripheral
@@ -276,7 +373,7 @@ static uint8_t advertData[] =
 };
 
 // GAP GATT Attributes
-static uint8_t attDeviceName[GAP_DEVICE_NAME_LEN] = "Simple BLE Peripheral";
+static uint8_t attDeviceName[GAP_DEVICE_NAME_LEN] = "NodeXX";
 
 // Globals used for ATT Response retransmission
 static gattMsgEvent_t *pAttRsp = NULL;
@@ -428,7 +525,7 @@ static void SimpleBLEPeripheral_init(void)
   // Setup the GAP Peripheral Role Profile
   {
     // For all hardware platforms, device starts advertising upon initialization
-    uint8_t initialAdvertEnable = TRUE;
+    uint8_t initialAdvertEnable = FALSE;
 
     // By setting this to zero, the device will go into the waiting state after
     // being discoverable for 30.72 second, and will not being advertising again
@@ -889,6 +986,8 @@ static void SimpleBLEPeripheral_stateChangeCB(gaprole_States_t newState)
  */
 static void SimpleBLEPeripheral_processStateChangeEvt(gaprole_States_t newState)
 {
+  uint8_t index;
+  bool done = FALSE;
 #ifdef PLUS_BROADCASTER
   static bool firstConnFlag = false;
 #endif // PLUS_BROADCASTER
@@ -917,6 +1016,117 @@ static void SimpleBLEPeripheral_processStateChangeEvt(gaprole_States_t newState)
         systemId[5] = ownAddress[3];
 
         DevInfo_SetParameter(DEVINFO_SYSTEM_ID, DEVINFO_SYSTEM_ID_LEN, systemId);
+
+        /* Initialise device index. */
+        GAPRole_GetParameter(GAPROLE_BD_ADDR, g_my_mac);
+
+        for(index = 0u ; ((index < APP_NUMBER_OF_NODES) && (FALSE == done)) ; index++)
+        {
+          if(0u == memcmp(g_my_devices.nodes[index].node_mac, g_my_mac, B_ADDR_LEN))
+          {
+            g_my_devices.my_index = index;
+
+            switch(g_my_devices.my_index)
+            {
+            case 0:
+              advertData[9]  = '0';
+              advertData[10] = '0';
+              break;
+            case 1:
+              advertData[9]  = '0';
+              advertData[10] = '1';
+              break;
+            case 2:
+              advertData[9]  = '0';
+              advertData[10] = '2';
+              break;
+            case 3:
+              advertData[9]  = '0';
+              advertData[10] = '3';
+              break;
+            case 4:
+              advertData[9]  = '0';
+              advertData[10] = '4';
+              break;
+            case 5:
+              advertData[9]  = '0';
+              advertData[10] = '5';
+              break;
+            case 6:
+              advertData[9]  = '0';
+              advertData[10] = '6';
+              break;
+            case 7:
+              advertData[9]  = '0';
+              advertData[10] = '7';
+              break;
+            case 8:
+              advertData[9]  = '0';
+              advertData[10] = '8';
+              break;
+            case 9:
+              advertData[9]  = '0';
+              advertData[10] = '9';
+              break;
+            case 10:
+              advertData[9]  = '1';
+              advertData[10] = '0';
+              break;
+            case 11:
+              advertData[9]  = '1';
+              advertData[10] = '1';
+              break;
+            case 12:
+              advertData[9]  = '1';
+              advertData[10] = '2';
+              break;
+            case 13:
+              advertData[9]  = '1';
+              advertData[10] = '3';
+              break;
+            case 14:
+              advertData[9]  = '1';
+              advertData[10] = '4';
+              break;
+            case 15:
+              advertData[9]  = '1';
+              advertData[10] = '5';
+              break;
+            case 16:
+              advertData[9]  = '1';
+              advertData[10] = '6';
+              break;
+            case 17:
+              advertData[9]  = '1';
+              advertData[10] = '7';
+              break;
+            case 18:
+              advertData[9]  = '1';
+              advertData[10] = '8';
+              break;
+            case 19:
+              advertData[9]  = '1';
+              advertData[10] = '9';
+              break;
+            }
+            // set advert data
+            GAPRole_SetParameter(GAPROLE_ADVERT_DATA, sizeof(advertData),
+                                 advertData);
+
+            uint16_t advInt = 32u + g_my_devices.my_index;
+
+            GAP_SetParamValue(TGAP_LIM_DISC_ADV_INT_MIN, advInt);
+            GAP_SetParamValue(TGAP_LIM_DISC_ADV_INT_MAX, advInt);
+            GAP_SetParamValue(TGAP_GEN_DISC_ADV_INT_MIN, advInt);
+            GAP_SetParamValue(TGAP_GEN_DISC_ADV_INT_MAX, advInt);
+
+            done = TRUE;
+
+            // Set the GAP Role Parameters
+            GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t),
+                                 &done);
+          }
+        }
 
         // Display device address
         Display_print0(dispHandle, 1, 0, Util_convertBdAddr2Str(ownAddress));
