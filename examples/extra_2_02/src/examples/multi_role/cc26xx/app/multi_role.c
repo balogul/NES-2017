@@ -65,6 +65,8 @@
 #include "osal_snv.h"
 #include "icall_apimsg.h"
 
+#include <driverlib/sys_ctrl.h>
+
 #include "util.h"
 #include "board_key.h"
 #include <ti/mw/display/Display.h>
@@ -80,7 +82,7 @@
 // Advertising interval when device is discoverable (units of 625us, 800=500ms)
 #define DEFAULT_ADVERTISING_INTERVAL          800
 #define MASTER_BROADCAST_ADV_INT              160
-#define CALCULATION_DONE_ADV_INT              1600
+#define CALCULATION_DONE_ADV_INT              640
 
 // Advertising channels for different modes
 #define DEFAULT_ADV_CHAN                GAP_ADVCHAN_ALL
@@ -116,7 +118,7 @@
 #define DEFAULT_SCAN_INT                      80
 
 // Maximum number of scan responses
-#define DEFAULT_MAX_SCAN_RES                  25
+#define DEFAULT_MAX_SCAN_RES                  30
 
 // TRUE to filter discovery results on desired service UUID
 #define DEFAULT_DEV_DISC_BY_SVC_UUID          TRUE
@@ -153,7 +155,7 @@
 // Task configuration
 #define MR_TASK_PRIORITY                     1
 #ifndef MR_TASK_STACK_SIZE
-#define MR_TASK_STACK_SIZE                   944
+#define MR_TASK_STACK_SIZE                   946
 #endif
 
 // Internal Events for RTOS application
@@ -169,11 +171,12 @@
 #define APP_BEGIN_BROADCASTING_EVENT        0x4000
 #define APP_BEGIN_CALCULATING_RSSI_EVENT    0x2000
 #define APP_BEGIN_IDLE_ADVERTISING_EVENT    0x1000
+#define APP_SYSTEM_RESET_EVENT              0x0800
 
 #define APP_RSSI_TO_VAL               256u
 #define APP_NUMBER_OF_NODES           20u
-#define APP_NUMBER_OF_EXPERIMENTS     5u
-#define APP_NUMBER_OF_MEASUREMENTS    1000u /*TODO: Make it 1000 for actual tests. */
+#define APP_NUMBER_OF_EXPERIMENTS     8u
+#define APP_NUMBER_OF_MEASUREMENTS    100u /*TODO: Make it 1000 for actual tests. */
 
 // Application states
 typedef enum {
@@ -219,7 +222,7 @@ static bool g_is_experiment = FALSE;
 
 static Clock_Struct g_task_delay_clock;
 static Clock_Struct g_end_discovery_clock;
-static Clock_Struct g_bug_clock;
+static Clock_Struct g_reset_clock;
 
 static uint16_t g_pack_counter = 0u;
 static uint16_t g_err_counter = 0u;
@@ -250,15 +253,15 @@ typedef struct
 
 typedef struct
 {
-  node_info_t   nodes[APP_NUMBER_OF_NODES];
-  size_t        my_index;
+  node_info_t nodes[APP_NUMBER_OF_NODES];
+  uint8_t     my_index;
 } __attribute__((__packed__)) network_dev_t;
 
 typedef struct
 {
-  size_t          dev_index;
-  size_t          exp_index;
-  uint8_t         rssi_vals[APP_NUMBER_OF_NODES][APP_NUMBER_OF_EXPERIMENTS];
+  uint8_t dev_index;
+  uint8_t exp_index;
+  uint8_t rssi_vals[APP_NUMBER_OF_NODES][APP_NUMBER_OF_EXPERIMENTS];
 } __attribute__((__packed__)) calc_rssi_t;
 
 // App event passed from profiles.
@@ -325,18 +328,106 @@ static node_info_t g_base_node =
 static network_dev_t g_my_devices =
 {
  {
+  /*Node 0*/
   {
    {0x04, 0x4B, 0xB6, 0xF8, 0xE6, 0xA0},
    FALSE
   },
+  /*Node 1*/
   {
    {0x84, 0xD1, 0xC1, 0xF8, 0xE6, 0xA0},
    FALSE
   },
+  /*Node 2*/
   {
    {0x06, 0x91, 0xC1, 0xF8, 0xE6, 0xA0},
    FALSE
   },
+  /*Node 3*/
+  {
+   {0x82, 0xC3, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 4*/
+  {
+   {0x87, 0x15, 0xB6, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 5*/
+  {
+   {0x06, 0x52, 0xB6, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 6*/
+  {
+   {0x07, 0x83, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 7*/
+  {
+   {0x01, 0x65, 0xC3, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 8*/
+  {
+   {0x00, 0x18, 0xAE, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 9*/
+  {
+   {0x86, 0xEB, 0xAD, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 10*/
+  {
+   {0x85, 0x95, 0xB6, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 11*/
+  {
+   {0x83, 0x0A, 0xAE, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 12*/
+  {
+   {0x82, 0x29, 0xC3, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 13*/
+  {
+   {0x04, 0xF4, 0xAD, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 14*/
+  {
+   {0x81, 0x1B, 0xAE, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 15*/
+  {
+   {0x86, 0xBD, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 16*/
+  {
+   {0x84, 0x2C, 0xC2, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 17*/
+  {
+   {0x00, 0x9F, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 18*/
+  {
+   {0x02, 0x03, 0xAE, 0xF8, 0xE6, 0xA0},
+   FALSE
+  },
+  /*Node 19*/
+  {
+   {0x00, 0xA3, 0xC1, 0xF8, 0xE6, 0xA0},
+   FALSE
+  }
  },
  0u
 };
@@ -350,9 +441,9 @@ static calc_rssi_t g_exp_values =
 static uint8_t scanRspData[] =
 {
   // complete name
-  13,   // length of this data
+  0x07,   // length of this data
   GAP_ADTYPE_LOCAL_NAME_COMPLETE,
-  'M', 'u', 'l', 't', 'i', ' ', 'R', 'o', 'l', 'e', ':', ')',
+  'N', 'o', 'd', 'e', '0', '0',
   
   // connection interval range
   0x05,   // length of this data
@@ -512,7 +603,7 @@ static void multi_role_sendAttRsp(void);
 static void multi_role_freeAttRsp(uint8_t status);
 static void multi_role_charValueChangeCB(uint8_t paramID);
 static uint8_t multi_role_enqueueMsg(uint16_t event, uint8_t *pData);
-static void multi_role_startDiscovery(uint16_t connHandle);
+//static void multi_role_startDiscovery(uint16_t connHandle);
 static void multi_role_processGATTDiscEvent(gattMsgEvent_t *pMsg);
 static bool multi_role_findSvcUuid(uint16_t uuid, uint8_t *pData, uint8_t dataLen);
 static void multi_role_addDeviceInfo(uint8_t *pAddr, uint8_t addrType);
@@ -522,7 +613,7 @@ static void multi_role_sendAttRsp(void);
 static void multi_role_freeAttRsp(uint8_t status);
 static uint16_t multi_role_mapConnHandleToIndex(uint16_t connHandle);
 static void multi_role_keyChangeHandler(uint8 keysPressed);
-static uint8_t multi_role_addMappingEntry(uint16_t connHandle);
+//static uint8_t multi_role_addMappingEntry(uint16_t connHandle);
 static void multi_role_processPasscode(gapPasskeyNeededEvent_t *pData);
 static void multi_role_processPairState(gapPairStateEvent_t* pairingEvent);
 static void multi_role_passcodeCB(uint8_t *deviceAddr, uint16_t connHandle,
@@ -620,14 +711,15 @@ static void multi_role_init(void)
   // Open Display.
   //dispHandle = Display_open(SBC_DISPLAY_TYPE, NULL);
   
-  Util_constructClock(&g_task_delay_clock, my_task_clock_handler, 1000u,
+  Util_constructClock(&g_task_delay_clock, my_task_clock_handler, 500u,
                       0u, FALSE, APP_BEGIN_IDLE_ADVERTISING_EVENT);
 
-  Util_constructClock(&g_end_discovery_clock, end_discovery, 1000u,\
-                      0u, FALSE, APP_BEGIN_CALCULATING_RSSI_EVENT);
+  Util_constructClock(&g_end_discovery_clock, end_discovery, 30000u,\
+                      0u, FALSE, 0u);
 
-  Util_constructClock(&g_bug_clock, my_task_clock_handler, 10000u, \
-                      0u, FALSE, APP_BEGIN_BROADCASTING_EVENT);
+  Util_constructClock(&g_reset_clock, my_task_clock_handler, \
+                      500u, 0u, FALSE, APP_SYSTEM_RESET_EVENT);
+
   // Setup the GAP
   {
     /*-------------------PERIPHERAL-------------------*/
@@ -914,6 +1006,13 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
         }
       }
 
+      if(g_events & APP_SYSTEM_RESET_EVENT)
+      {
+        g_events &= ~APP_SYSTEM_RESET_EVENT;
+
+        SysCtrlSystemReset();
+      }
+
       if(g_events & APP_BEGIN_LISTENNING_EVENT)
       {
         g_events &= ~APP_BEGIN_LISTENNING_EVENT;
@@ -998,9 +1097,7 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
 
         g_is_experiment = FALSE;
 
-        g_exp_values.dev_index++;
-
-        Util_startClock(&g_task_delay_clock);
+        Util_restartClock(&g_task_delay_clock, 500u);
       }
 
       if(g_events & APP_BEGIN_IDLE_ADVERTISING_EVENT)
@@ -1008,6 +1105,7 @@ static void multi_role_taskFxn(UArg a0, UArg a1)
         g_events &= ~APP_BEGIN_IDLE_ADVERTISING_EVENT;
 
         g_is_experiment = FALSE;
+        g_exp_values.dev_index++;
 
         if(APP_NUMBER_OF_NODES == g_exp_values.dev_index){
           g_exp_values.dev_index = 0u;
@@ -1351,6 +1449,94 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
         if(0u == memcmp(g_my_devices.nodes[index].node_mac, g_my_mac, B_ADDR_LEN))
         {
           g_my_devices.my_index = index;
+
+          switch(g_my_devices.my_index)
+          {
+          case 0:
+            scanRspData[6] = '0';
+            scanRspData[7] = '0';
+            break;
+          case 1:
+            scanRspData[6] = '0';
+            scanRspData[7] = '1';
+            break;
+          case 2:
+            scanRspData[6] = '0';
+            scanRspData[7] = '2';
+            break;
+          case 3:
+            scanRspData[6] = '0';
+            scanRspData[7] = '3';
+            break;
+          case 4:
+            scanRspData[6] = '0';
+            scanRspData[7] = '4';
+            break;
+          case 5:
+            scanRspData[6] = '0';
+            scanRspData[7] = '5';
+            break;
+          case 6:
+            scanRspData[6] = '0';
+            scanRspData[7] = '6';
+            break;
+          case 7:
+            scanRspData[6] = '0';
+            scanRspData[7] = '7';
+            break;
+          case 8:
+            scanRspData[6] = '0';
+            scanRspData[7] = '8';
+            break;
+          case 9:
+            scanRspData[6] = '0';
+            scanRspData[7] = '9';
+            break;
+          case 10:
+            scanRspData[6] = '1';
+            scanRspData[7] = '0';
+            break;
+          case 11:
+            scanRspData[6] = '1';
+            scanRspData[7] = '1';
+            break;
+          case 12:
+            scanRspData[6] = '1';
+            scanRspData[7] = '2';
+            break;
+          case 13:
+            scanRspData[6] = '1';
+            scanRspData[7] = '3';
+            break;
+          case 14:
+            scanRspData[6] = '1';
+            scanRspData[7] = '4';
+            break;
+          case 15:
+            scanRspData[6] = '1';
+            scanRspData[7] = '5';
+            break;
+          case 16:
+            scanRspData[6] = '1';
+            scanRspData[7] = '6';
+            break;
+          case 17:
+            scanRspData[6] = '1';
+            scanRspData[7] = '7';
+            break;
+          case 18:
+            scanRspData[6] = '1';
+            scanRspData[7] = '8';
+            break;
+          case 19:
+            scanRspData[6] = '1';
+            scanRspData[7] = '9';
+            break;
+          }
+          // set scan response data
+          GAPRole_SetParameter(GAPROLE_SCAN_RSP_DATA, sizeof(scanRspData),
+                               scanRspData, NULL);
+
           done = TRUE;
         }
       }
@@ -1438,7 +1624,7 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
                                BROADCAST_DISCOVERY_PASSIVE_SCAN,
                                DEFAULT_DISCOVERY_WHITE_LIST);
       }else{
-        if((0u != g_pack_counter) && (100u >= g_err_counter))
+        if((0u != g_pack_counter) && (10u >= g_err_counter))
         {
           g_exp_values.rssi_vals[g_exp_values.dev_index][g_exp_values.exp_index] = \
               (uint8_t)(g_rssi_val / g_pack_counter);
@@ -1540,7 +1726,7 @@ static void multi_role_processRoleEvent(gapMultiRoleEvent_t *pEvent)
     // connection has been terminated
   case GAP_LINK_TERMINATED_EVENT:
     {
-      if(!g_is_experiment)
+      if((!g_is_experiment))//(0u == memcmp(pEvent->linkCmpl.devAddr, g_base_node.node_mac, B_ADDR_LEN)))
       {
         g_is_experiment = TRUE;
         uint8_t advertEnabled = FALSE;
@@ -1721,18 +1907,18 @@ void multi_role_keyChangeHandler(uint8 keys)
 static void multi_role_handleKeys(uint8_t keys)
 {
   // to store information from linkDB
-  linkDBInfo_t pInfo;
+  //linkDBInfo_t pInfo;
   // address type
-  uint8_t addrType;
+  //uint8_t addrType;
   // address
-  uint8_t *peerAddr;  
+  //uint8_t *peerAddr;
   // status
-  bStatus_t status;
+  //bStatus_t status;
   // to toggle advertising
-  uint8_t adv;
-  uint8_t adv_status;
+  //uint8_t adv;
+  //uint8_t adv_status;
   // to loop through available connections
-  uint8_t done = FALSE;
+  //uint8_t done = FALSE;
 #if defined(CC2650STK)
   switch(g_app_state)
   {
@@ -1740,6 +1926,7 @@ static void multi_role_handleKeys(uint8_t keys)
   case APP_STATE_CALCULATED_IDLE:
     if (keys & KEY_LEFT)
     {
+#if 0
       //get current advertising status
       GAPRole_GetParameter(GAPROLE_ADVERT_ENABLED, &adv_status, NULL);
       //if we're currently advertising
@@ -1756,12 +1943,11 @@ static void multi_role_handleKeys(uint8_t keys)
         adv = TRUE;
         GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &adv, NULL);
       }
+#endif
     }
     else if (keys & KEY_RIGHT)
     {
-      //TODO:Add shutdown here
-
-      Util_restartClock(&g_bug_clock, 1000u);
+      Util_restartClock(&g_reset_clock, 500u);
     }
     break; /* APP_STATE_IDLE and APP_STATE_CALCULATED_IDLE*/
   case APP_STATE_MASTER_BROADCASTER:
